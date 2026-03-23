@@ -77,6 +77,22 @@ html, body {
   color: var(--dc-text-tertiary);
 }
 
+.artboard-label .label-sep {
+  color: var(--dc-text-tertiary);
+  opacity: 0.5;
+  margin: 0 2px;
+  font-weight: 400;
+}
+
+.artboard-label .label-part {
+  color: var(--dc-text-secondary);
+}
+
+.artboard-label .label-part:last-of-type {
+  color: var(--dc-text-primary);
+  font-weight: 600;
+}
+
 /* ── 节点高亮 ── */
 .node-highlight {
   position: absolute;

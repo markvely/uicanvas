@@ -26,7 +26,7 @@ export class ArtboardRenderer {
 
   /**
    * 创建画板 DOM
-   * @param {{ id: string, name: string, width: number, height: number, left: number, top: number, styles?: object }} meta
+   * @param {{ id: string, name: string, width: number, height: number, left: number, top: number, project?: string, page?: string, state?: string, styles?: object }} meta
    * @returns {{ nodeId: string }}
    */
   create(meta) {
@@ -34,6 +34,10 @@ export class ArtboardRenderer {
     el.className = 'artboard';
     el.dataset.artboardId = meta.id;
     el.dataset.nodeId = meta.id; // artboard 本身也是节点
+
+    // 存储 meta 供导出等功能使用
+    el._meta = { ...meta };
+
     el.style.width = `${meta.width}px`;
     el.style.height = `${meta.height}px`;
     el.style.left = `${meta.left}px`;
@@ -48,11 +52,20 @@ export class ArtboardRenderer {
       }
     }
 
+    // 构建标题
+    const titleParts = [];
+    if (meta.project) titleParts.push(meta.project);
+    if (meta.page) titleParts.push(meta.page);
+    if (meta.state) titleParts.push(meta.state);
+    const displayName = titleParts.length > 0
+      ? titleParts.map((p, i) => `<span class="label-part">${this._escapeHtml(p)}</span>${i < titleParts.length - 1 ? '<span class="label-sep">/</span>' : ''}`).join('')
+      : `<span class="label-part">${this._escapeHtml(meta.name)}</span>`;
+
     // 画板标签
     const label = document.createElement('div');
     label.className = 'artboard-label';
     label.innerHTML = `
-      <span class="name">${this._escapeHtml(meta.name)}</span>
+      <span class="name">${displayName}</span>
       <span class="size">${meta.width} × ${meta.height}</span>
     `;
     el.appendChild(label);
@@ -79,6 +92,16 @@ export class ArtboardRenderer {
     this.artboardEls.set(meta.id, el);
 
     return { nodeId: meta.id };
+  }
+
+  /** 获取画板的结构化文件名 */
+  getArtboardFileName(artboardId) {
+    const el = this.artboardEls.get(artboardId);
+    if (!el || !el._meta) return 'artboard';
+    const m = el._meta;
+    const parts = [m.project, m.page, m.state].filter(Boolean);
+    const name = parts.length > 0 ? parts.join('-') : (m.name || 'artboard');
+    return `${name}_${m.width}x${m.height}`;
   }
 
   select(id) {
@@ -317,7 +340,7 @@ export class ArtboardRenderer {
       });
     }
     return {
-      fileName: 'DesignCanvas',
+      fileName: 'UICanvas',
       nodeCount: allNodes.length,
       artboardCount: this.artboardEls.size,
       artboards: artboardList,

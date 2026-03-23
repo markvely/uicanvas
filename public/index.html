@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DesignCanvas</title>
+  <title>UICanvas</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -20,6 +20,19 @@
 
   <!-- 底部工具栏 -->
   <div id="toolbar">
+    <button class="toolbar-btn" id="btn-undo" title="Undo (⌘Z)" disabled>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M3 7h7a3 3 0 010 6H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M6 4L3 7l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <button class="toolbar-btn" id="btn-redo" title="Redo (⌘⇧Z)" disabled>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M13 7H6a3 3 0 000 6h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M10 4l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="toolbar-divider"></div>
     <button class="toolbar-btn" id="btn-zoom-out" title="Zoom Out">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -45,6 +58,14 @@
         <circle cx="8" cy="8" r="1" fill="currentColor"/>
       </svg>
     </button>
+    <div class="toolbar-divider"></div>
+    <button class="toolbar-btn" id="btn-export" title="Export PNG (⌘E)" disabled>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 2v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
   </div>
 
   <script type="module">
@@ -52,6 +73,7 @@
     import { ArtboardRenderer } from '/js/artboard.js';
     import { WSClient } from '/js/ws-client.js';
     import { registerComponents } from '/js/components.js';
+    import { HistoryManager } from '/js/history.js';
     import { renderComponentGallery } from '/components/index.js';
 
     // 初始化
@@ -60,10 +82,93 @@
 
     const canvas = new Canvas(viewport, world);
     const renderer = new ArtboardRenderer(world);
-    const wsClient = new WSClient(renderer);
+    const history = new HistoryManager(50);
+    const wsClient = new WSClient(renderer, history);
 
     // 组件注册
     registerComponents();
+
+    // ── UI 状态管理 ──
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
+    const btnExport = document.getElementById('btn-export');
+
+    function updateButtonStates() {
+      btnUndo.disabled = !history.canUndo;
+      btnRedo.disabled = !history.canRedo;
+      btnExport.disabled = !renderer.selectedId;
+    }
+
+    history.onChange(updateButtonStates);
+
+    // 选中状态变化时更新导出按钮
+    const origSelect = renderer.select.bind(renderer);
+    renderer.select = (id) => { origSelect(id); updateButtonStates(); };
+    const origDeselect = renderer.deselectAll.bind(renderer);
+    renderer.deselectAll = () => { origDeselect(); updateButtonStates(); };
+
+    // ── Undo/Redo ──
+    function getContentEl(artboardId) {
+      const el = renderer.artboardEls.get(artboardId);
+      return el ? el.querySelector('.artboard-content') : null;
+    }
+
+    btnUndo.addEventListener('click', () => {
+      history.undo(getContentEl);
+    });
+
+    btnRedo.addEventListener('click', () => {
+      history.redo(getContentEl);
+    });
+
+    // ── 导出 PNG ──
+    async function exportSelectedArtboard() {
+      if (!renderer.selectedId) return;
+      const el = renderer.artboardEls.get(renderer.selectedId);
+      if (!el) return;
+
+      btnExport.disabled = true;
+      btnExport.style.opacity = '0.5';
+
+      try {
+        const { default: htmlToImage } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
+        const contentEl = el.querySelector('.artboard-content');
+        const dataUrl = await htmlToImage.toPng(contentEl || el, {
+          pixelRatio: 2,
+          skipFonts: true,
+          backgroundColor: '#000',
+        });
+
+        const fileName = renderer.getArtboardFileName(renderer.selectedId) + '.png';
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error('[export] Failed:', err);
+      } finally {
+        btnExport.disabled = false;
+        btnExport.style.opacity = '';
+        updateButtonStates();
+      }
+    }
+
+    btnExport.addEventListener('click', exportSelectedArtboard);
+
+    // ── 快捷键 ──
+    document.addEventListener('keydown', (e) => {
+      const isMeta = e.metaKey || e.ctrlKey;
+      if (isMeta && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        history.undo(getContentEl);
+      } else if (isMeta && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        history.redo(getContentEl);
+      } else if (isMeta && e.key === 'e') {
+        e.preventDefault();
+        exportSelectedArtboard();
+      }
+    });
 
     // WebSocket 连接
     wsClient.onStatusChange = (connected) => {
@@ -96,13 +201,14 @@
     });
 
     // 暴露到全局 (调试/测试用)
-    window.dc = { canvas, renderer, wsClient };
+    window.dc = { canvas, renderer, wsClient, history };
 
     // ── Demo: Hello World App ──
     setTimeout(() => {
       // 创建 iPhone 画板
       renderer.create({
         id: 'hw-app', name: 'Hello World App',
+        project: 'UICanvas', page: 'Hello World', state: 'Default',
         width: 390, height: 844, left: 0, top: 0,
         styles: { backgroundColor: '#000', borderRadius: '40px' }
       });
