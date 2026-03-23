@@ -30,29 +30,19 @@ export class ArtboardRenderer {
    * @returns {{ nodeId: string }}
    */
   create(meta) {
-    const el = document.createElement('div');
-    el.className = 'artboard';
-    el.dataset.artboardId = meta.id;
-    el.dataset.nodeId = meta.id; // artboard 本身也是节点
+    // ── 外层包装器 (不裁剪, 放标签和拖拽手柄) ──
+    const wrapper = document.createElement('div');
+    wrapper.className = 'artboard-wrapper';
+    wrapper.dataset.artboardId = meta.id;
+    wrapper.dataset.nodeId = meta.id;
+    wrapper._meta = { ...meta };
 
-    // 存储 meta 供导出等功能使用
-    el._meta = { ...meta };
+    wrapper.style.position = 'absolute';
+    wrapper.style.left = `${meta.left}px`;
+    wrapper.style.top = `${meta.top}px`;
+    wrapper.style.width = `${meta.width}px`;
 
-    el.style.width = `${meta.width}px`;
-    el.style.height = `${meta.height}px`;
-    el.style.left = `${meta.left}px`;
-    el.style.top = `${meta.top}px`;
-
-    // 应用自定义样式
-    if (meta.styles) {
-      for (const [k, v] of Object.entries(meta.styles)) {
-        if (k !== 'width' && k !== 'height') {
-          el.style[k] = v;
-        }
-      }
-    }
-
-    // 构建标题
+    // ── 标签 (在画板外部上方) ──
     const titleParts = [];
     if (meta.project) titleParts.push(meta.project);
     if (meta.page) titleParts.push(meta.page);
@@ -61,16 +51,32 @@ export class ArtboardRenderer {
       ? titleParts.map((p, i) => `<span class="label-part">${this._escapeHtml(p)}</span>${i < titleParts.length - 1 ? '<span class="label-sep">/</span>' : ''}`).join('')
       : `<span class="label-part">${this._escapeHtml(meta.name)}</span>`;
 
-    // 画板标签
     const label = document.createElement('div');
     label.className = 'artboard-label';
     label.innerHTML = `
       <span class="name">${displayName}</span>
       <span class="size">${meta.width} × ${meta.height}</span>
     `;
-    el.appendChild(label);
+    wrapper.appendChild(label);
 
-    // 内容容器
+    // ── 画板主体 (可视区域, overflow: hidden) ──
+    const body = document.createElement('div');
+    body.className = 'artboard';
+    body.style.width = '100%';
+    body.style.height = `${meta.height}px`;
+    body.style.minHeight = `${meta.height}px`;
+
+    // 应用自定义样式到 body
+    if (meta.styles) {
+      for (const [k, v] of Object.entries(meta.styles)) {
+        if (k !== 'width' && k !== 'height') {
+          body.style[k] = v;
+        }
+      }
+    }
+    wrapper.appendChild(body);
+
+    // ── 内容容器 ──
     const content = document.createElement('div');
     content.className = 'artboard-content';
     content.dataset.nodeId = `${meta.id}-content`;
@@ -80,16 +86,47 @@ export class ArtboardRenderer {
     content.style.overflow = 'hidden';
     content.style.display = 'flex';
     content.style.flexDirection = 'column';
-    el.appendChild(content);
+    body.appendChild(content);
 
-    // 选中交互
-    el.addEventListener('click', (e) => {
+    // ── 拖拽调整高度手柄 ──
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'artboard-resize-handle';
+    wrapper.appendChild(resizeHandle);
+
+    const sizeLabel = label.querySelector('.size');
+    let startY = 0, startH = 0;
+    resizeHandle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startY = e.clientY;
+      startH = body.offsetHeight;
+      resizeHandle.setPointerCapture(e.pointerId);
+
+      const onMove = (ev) => {
+        const canvas = this.world.closest('#canvas-viewport');
+        const scale = canvas ? parseFloat(getComputedStyle(this.world).transform.split(',')[3]) || 1 : 1;
+        const delta = (ev.clientY - startY) / scale;
+        const newH = Math.max(100, startH + delta);
+        body.style.height = `${newH}px`;
+        body.style.minHeight = `${newH}px`;
+        if (sizeLabel) sizeLabel.textContent = `${meta.width} × ${Math.round(newH)}`;
+      };
+      const onUp = () => {
+        resizeHandle.removeEventListener('pointermove', onMove);
+        resizeHandle.removeEventListener('pointerup', onUp);
+      };
+      resizeHandle.addEventListener('pointermove', onMove);
+      resizeHandle.addEventListener('pointerup', onUp);
+    });
+
+    // ── 选中交互 ──
+    wrapper.addEventListener('click', (e) => {
       e.stopPropagation();
       this.select(meta.id);
     });
 
-    this.world.appendChild(el);
-    this.artboardEls.set(meta.id, el);
+    this.world.appendChild(wrapper);
+    this.artboardEls.set(meta.id, wrapper);
 
     return { nodeId: meta.id };
   }
@@ -304,22 +341,32 @@ export class ArtboardRenderer {
     }
   }
 
-  /** 截图 (使用 Canvas API) */
+  /** 截图 (使用 html2canvas) */
   async getScreenshot(nodeId, scale = 1) {
     const el = this.world.querySelector(`[data-node-id="${nodeId}"]`);
     if (!el) return null;
 
-    // 使用 html2canvas-like 方式: 直接截取节点
-    const { default: htmlToImage } = await import('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/+esm');
-    try {
-      const dataUrl = await htmlToImage.toJpeg(el, {
-        quality: 0.85,
-        pixelRatio: scale,
-        skipFonts: true,
+    // 加载 html2canvas
+    if (!window.html2canvas) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
       });
+    }
+
+    try {
+      const canvas = await window.html2canvas(el, {
+        scale,
+        backgroundColor: null,
+        useCORS: true,
+        logging: false,
+      });
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       return { imageData: dataUrl.split(',')[1], mimeType: 'image/jpeg' };
     } catch (err) {
-      // 降级: 返回尺寸信息
       return { error: err.message, width: el.offsetWidth, height: el.offsetHeight };
     }
   }

@@ -36,9 +36,22 @@ html, body {
   will-change: transform;
 }
 
-/* ── 画板 ── */
-.artboard {
+/* ── 画板包装器 (标签+画板+拖拽手柄) ── */
+.artboard-wrapper {
   position: absolute;
+}
+
+.artboard-wrapper:hover > .artboard {
+  box-shadow: var(--dc-shadow-lg), 0 0 0 1px var(--dc-border);
+}
+
+.artboard-wrapper.selected > .artboard {
+  box-shadow: var(--dc-shadow-lg), 0 0 0 2px var(--dc-accent);
+}
+
+/* ── 画板主体 ── */
+.artboard {
+  position: relative;
   background: var(--dc-bg-primary);
   border-radius: var(--dc-radius-md);
   box-shadow: var(--dc-shadow-lg);
@@ -46,24 +59,14 @@ html, body {
   transition: box-shadow var(--dc-duration-fast) var(--dc-ease);
 }
 
-.artboard:hover {
-  box-shadow: var(--dc-shadow-lg), 0 0 0 1px var(--dc-border);
-}
-
-.artboard.selected {
-  box-shadow: var(--dc-shadow-lg), 0 0 0 2px var(--dc-accent);
-}
-
-/* 画板标签 */
+/* 画板标签 (外部上方) */
 .artboard-label {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
   white-space: nowrap;
   pointer-events: none;
+  margin-bottom: 8px;
 }
 
 .artboard-label .name {
@@ -91,6 +94,31 @@ html, body {
 .artboard-label .label-part:last-of-type {
   color: var(--dc-text-primary);
   font-weight: 600;
+}
+
+/* 拖拽调整高度手柄 */
+.artboard-resize-handle {
+  width: 100%;
+  height: 8px;
+  cursor: ns-resize;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.artboard-resize-handle::after {
+  content: '';
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--dc-text-tertiary);
+}
+
+.artboard-wrapper:hover > .artboard-resize-handle,
+.artboard-resize-handle:active {
+  opacity: 1;
 }
 
 /* ── 节点高亮 ── */
