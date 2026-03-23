@@ -1,0 +1,198 @@
+/* style.css — 画布核心样式 */
+@import url('./tokens.css');
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--dc-bg-canvas);
+  color: var(--dc-text-primary);
+  font: var(--dc-font-body);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── 画布容器 ── */
+#canvas-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: default;
+  /* 点阵网格背景 */
+  background-color: var(--dc-bg-canvas);
+  background-image: radial-gradient(circle, var(--dc-grid-dot) 1px, transparent 1px);
+  background-size: var(--dc-grid-size) var(--dc-grid-size);
+}
+
+#canvas-viewport.panning { cursor: grab; }
+#canvas-viewport.panning.active { cursor: grabbing; }
+
+#canvas-world {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* ── 画板 ── */
+.artboard {
+  position: absolute;
+  background: var(--dc-bg-primary);
+  border-radius: var(--dc-radius-md);
+  box-shadow: var(--dc-shadow-lg);
+  overflow: hidden;
+  transition: box-shadow var(--dc-duration-fast) var(--dc-ease);
+}
+
+.artboard:hover {
+  box-shadow: var(--dc-shadow-lg), 0 0 0 1px var(--dc-border);
+}
+
+.artboard.selected {
+  box-shadow: var(--dc-shadow-lg), 0 0 0 2px var(--dc-accent);
+}
+
+/* 画板标签 */
+.artboard-label {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.artboard-label .name {
+  font: var(--dc-font-footnote);
+  font-weight: 600;
+  color: var(--dc-text-secondary);
+}
+
+.artboard-label .size {
+  font: var(--dc-font-caption2);
+  color: var(--dc-text-tertiary);
+}
+
+/* ── 节点高亮 ── */
+.node-highlight {
+  position: absolute;
+  pointer-events: none;
+  z-index: 9999;
+  border: 1px solid var(--dc-highlight);
+  border-radius: 2px;
+  transition: opacity var(--dc-duration-fast) var(--dc-ease);
+}
+
+.node-highlight.selected {
+  border-color: var(--dc-accent);
+  border-width: 2px;
+}
+
+/* 节点 Tooltip */
+.node-tooltip {
+  position: absolute;
+  padding: 3px 8px;
+  background: var(--dc-highlight);
+  color: white;
+  font: var(--dc-font-caption2);
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10000;
+  transform: translateY(-100%);
+  margin-top: -4px;
+}
+
+/* ── 底部工具栏 ── */
+#toolbar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(44, 44, 46, 0.85);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--dc-radius-full);
+  box-shadow: var(--dc-shadow-md);
+  z-index: 10000;
+  pointer-events: auto;
+}
+
+#zoom-level {
+  font: var(--dc-font-caption);
+  color: var(--dc-text-secondary);
+  min-width: 44px;
+  text-align: center;
+}
+
+.toolbar-btn {
+  width: 28px; height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--dc-text-secondary);
+  border-radius: var(--dc-radius-sm);
+  cursor: pointer;
+  transition: all var(--dc-duration-fast) var(--dc-ease);
+}
+
+.toolbar-btn:hover {
+  background: var(--dc-bg-hover);
+  color: var(--dc-text-primary);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--dc-border);
+}
+
+/* ── 状态指示器 ── */
+#status-bar {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(44, 44, 46, 0.85);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--dc-radius-full);
+  font: var(--dc-font-caption);
+  color: var(--dc-text-secondary);
+  z-index: 10000;
+  pointer-events: auto;
+}
+
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--dc-danger);
+  transition: background var(--dc-duration-normal) var(--dc-ease);
+}
+
+.status-dot.connected { background: var(--dc-success); }
+
+/* ── 画布内节点通用 ── */
+.artboard [data-node-id] {
+  position: relative;
+}
+
+.artboard [data-node-id]:hover {
+  outline: 1px solid rgba(10, 132, 255, 0.4);
+  outline-offset: -1px;
+}

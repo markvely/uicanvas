@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DesignCanvas</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- 画布视口 -->
+  <div id="canvas-viewport">
+    <div id="canvas-world"></div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div id="status-bar">
+    <span class="status-dot" id="ws-status"></span>
+    <span id="status-text">Connecting…</span>
+  </div>
+
+  <!-- 底部工具栏 -->
+  <div id="toolbar">
+    <button class="toolbar-btn" id="btn-zoom-out" title="Zoom Out">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <span id="zoom-level">100%</span>
+    <button class="toolbar-btn" id="btn-zoom-in" title="Zoom In">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <div class="toolbar-divider"></div>
+    <button class="toolbar-btn" id="btn-fit" title="Fit to Screen (⌘1)">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        <path d="M5 8h6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <path d="M8 5v6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button class="toolbar-btn" id="btn-reset" title="Reset View (⌘0)">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        <circle cx="8" cy="8" r="1" fill="currentColor"/>
+      </svg>
+    </button>
+  </div>
+
+  <script type="module">
+    import { Canvas } from '/js/canvas.js';
+    import { ArtboardRenderer } from '/js/artboard.js';
+    import { WSClient } from '/js/ws-client.js';
+    import { registerComponents } from '/js/components.js';
+    import { renderComponentGallery } from '/components/index.js';
+
+    // 初始化
+    const viewport = document.getElementById('canvas-viewport');
+    const world = document.getElementById('canvas-world');
+
+    const canvas = new Canvas(viewport, world);
+    const renderer = new ArtboardRenderer(world);
+    const wsClient = new WSClient(renderer);
+
+    // 组件注册
+    registerComponents();
+
+    // WebSocket 连接
+    wsClient.onStatusChange = (connected) => {
+      const dot = document.getElementById('ws-status');
+      const text = document.getElementById('status-text');
+      dot.classList.toggle('connected', connected);
+      text.textContent = connected ? 'Connected' : 'Reconnecting…';
+    };
+    wsClient.connect();
+
+    // 工具栏按钮
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      const rect = viewport.getBoundingClientRect();
+      canvas.zoomAt(rect.width / 2, rect.height / 2, 0.15);
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      const rect = viewport.getBoundingClientRect();
+      canvas.zoomAt(rect.width / 2, rect.height / 2, -0.15);
+    });
+
+    document.getElementById('btn-fit').addEventListener('click', () => canvas.fitToScreen());
+    document.getElementById('btn-reset').addEventListener('click', () => canvas.resetView());
+
+    // 点击空白区域取消选中
+    viewport.addEventListener('click', (e) => {
+      if (e.target === viewport || e.target === world) {
+        renderer.deselectAll();
+      }
+    });
+
+    // 暴露到全局 (调试/测试用)
+    window.dc = { canvas, renderer, wsClient };
+
+    // ── Demo: Hello World App ──
+    setTimeout(() => {
+      // 创建 iPhone 画板
+      renderer.create({
+        id: 'hw-app', name: 'Hello World App',
+        width: 390, height: 844, left: 0, top: 0,
+        styles: { backgroundColor: '#000', borderRadius: '40px' }
+      });
+
+      // 状态栏
+      renderer.writeHTML({
+        targetNodeId: 'hw-app-content', mode: 'insert-children',
+        html: `<div layer-name="Status Bar" style="display:flex; justify-content:space-between; align-items:center; padding:14px 24px 0; color:#fff; font:600 14px/18px system-ui;">
+          <span>9:41</span>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <svg width="16" height="12" viewBox="0 0 16 12"><path d="M1 8h2v4H1zM5 5h2v7H5zM9 2h2v10H9zM13 0h2v12h-2z" fill="#fff"/></svg>
+            <svg width="15" height="11" viewBox="0 0 15 11"><path d="M7.5 3.5a6 6 0 014.2 1.7l1.1-1.1A7.5 7.5 0 007.5 1.5 7.5 7.5 0 002.2 3.6L3.3 5.2A6 6 0 017.5 3.5z" fill="#fff"/><path d="M7.5 6.5a3.5 3.5 0 012.5 1l1.1-1.1a5 5 0 00-7.2 0L5 7.5a3.5 3.5 0 012.5-1z" fill="#fff"/><circle cx="7.5" cy="9.5" r="1.5" fill="#fff"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0" y="1" width="21" height="10" rx="2" stroke="#fff" stroke-width="1" fill="none"/><rect x="1.5" y="2.5" width="16" height="7" rx="1" fill="#30D158"/><rect x="22" y="4" width="2" height="4" rx="1" fill="#fff"/></svg>
+          </div>
+        </div>`
+      });
+
+      // 主内容
+      renderer.writeHTML({
+        targetNodeId: 'hw-app-content', mode: 'insert-children',
+        html: `<div layer-name="Main Content" style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; padding:0 32px; gap:24px;">
+          <div style="width:120px; height:120px; border-radius:28px; background:linear-gradient(135deg, #5E5CE6, #BF5AF2); display:flex; align-items:center; justify-content:center; box-shadow: 0 8px 32px rgba(94,92,230,0.4);">
+            <svg width="56" height="56" viewBox="0 0 56 56" fill="none"><path d="M28 8l5.5 11 12.5 2-9 9 2 12.5L28 37l-11 5.5 2-12.5-9-9 12.5-2z" fill="#fff" opacity="0.9"/></svg>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+            <span style="font:700 34px/41px system-ui; color:#fff; letter-spacing:-0.5px;">Hello, World!</span>
+            <span style="font:400 17px/22px system-ui; color:#8E8E93;">Welcome to DesignCanvas</span>
+          </div>
+          <div style="display:flex; gap:12px; margin-top:16px;">
+            <div style="padding:14px 32px; background:#5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Get Started</div>
+            <div style="padding:14px 32px; background:#2C2C2E; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Learn More</div>
+          </div>
+        </div>`
+      });
+
+      // Home Indicator
+      renderer.writeHTML({
+        targetNodeId: 'hw-app-content', mode: 'insert-children',
+        html: `<div layer-name="Home Indicator" style="display:flex; justify-content:center; padding:8px 0 12px;">
+          <div style="width:134px; height:5px; background:rgba(255,255,255,0.3); border-radius:3px;"></div>
+        </div>`
+      });
+
+      // ═══════════════════════════════════════════
+      // Design Spec 画板
+      // ═══════════════════════════════════════════
+      renderer.create({
+        id: 'ds-spec', name: 'Design System — Spec Sheet',
+        width: 1200, height: 2400, left: 470, top: 0,
+        styles: { backgroundColor: '#111113', borderRadius: '12px' }
+      });
+
+      // ── 标题 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Header" style="padding:48px 48px 0; display:flex; flex-direction:column; gap:8px;">
+          <span style="font:800 42px/48px system-ui; color:#fff; letter-spacing:-1px;">DesignCanvas</span>
+          <span style="font:400 18px/24px system-ui; color:#636366;">Design System Specification v1.0</span>
+          <div style="height:1px; background:linear-gradient(90deg, #5E5CE6, transparent); margin-top:16px;"></div>
+        </div>`
+      });
+
+      // ── 配色板 ──
+      const colorSwatch = (name, hex, textColor = '#fff') =>
+        `<div style="display:flex; flex-direction:column; gap:6px; align-items:center;">
+          <div style="width:80px; height:80px; border-radius:16px; background:${hex}; box-shadow:0 4px 16px ${hex}44;"></div>
+          <span style="font:600 12px/16px system-ui; color:#fff;">${name}</span>
+          <span style="font:400 11px/14px monospace; color:#636366;">${hex}</span>
+        </div>`;
+
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Colors Section" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Color Palette</span>
+
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <span style="font:600 14px/18px system-ui; color:#8E8E93; text-transform:uppercase; letter-spacing:1px;">Backgrounds</span>
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+              ${colorSwatch('Canvas', '#1A1A1A')}
+              ${colorSwatch('Primary', '#000000')}
+              ${colorSwatch('Secondary', '#1C1C1E')}
+              ${colorSwatch('Elevated', '#2C2C2E')}
+              ${colorSwatch('Hover', '#3A3A3C')}
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <span style="font:600 14px/18px system-ui; color:#8E8E93; text-transform:uppercase; letter-spacing:1px;">Accents & Status</span>
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+              ${colorSwatch('Accent', '#5E5CE6')}
+              ${colorSwatch('Accent Hover', '#7B79F1')}
+              ${colorSwatch('Highlight', '#0A84FF')}
+              ${colorSwatch('Success', '#30D158')}
+              ${colorSwatch('Warning', '#FF9F0A')}
+              ${colorSwatch('Danger', '#FF453A')}
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <span style="font:600 14px/18px system-ui; color:#8E8E93; text-transform:uppercase; letter-spacing:1px;">Text & Borders</span>
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+              ${colorSwatch('Text Primary', '#FFFFFF')}
+              ${colorSwatch('Text Secondary', '#8E8E93')}
+              ${colorSwatch('Text Tertiary', '#636366')}
+              ${colorSwatch('Border', '#38383A')}
+              ${colorSwatch('Border Active', '#5E5CE6')}
+            </div>
+          </div>
+        </div>`
+      });
+
+      // ── 渐变色 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Gradients" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Gradients</span>
+          <div style="display:flex; gap:20px;">
+            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #5E5CE6, #BF5AF2);"></div>
+              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Accent → Purple</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #0A84FF, #30D158);"></div>
+              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Blue → Green</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #FF9F0A, #FF453A);"></div>
+              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Amber → Red</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #1C1C1E, #2C2C2E); border:1px solid #38383A;"></div>
+              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Surface Dark</span>
+            </div>
+          </div>
+        </div>`
+      });
+
+      // ── 字体排版 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Typography" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Typography</span>
+          <span style="font:400 14px/20px system-ui; color:#636366;">Font Family: SF Pro / system-ui &nbsp;|&nbsp; Mono: SF Mono / monospace</span>
+
+          <div style="display:flex; flex-direction:column; gap:0;">
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Large Title</span>
+              <span style="font:700 34px/41px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">700 34/41</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Title 1</span>
+              <span style="font:700 28px/34px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">700 28/34</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Title 2</span>
+              <span style="font:700 22px/28px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">700 22/28</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Title 3</span>
+              <span style="font:600 20px/25px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">600 20/25</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Headline</span>
+              <span style="font:600 17px/22px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">600 17/22</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Body</span>
+              <span style="font:400 17px/22px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">400 17/22</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Callout</span>
+              <span style="font:400 16px/21px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">400 16/21</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Subhead</span>
+              <span style="font:400 15px/20px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">400 15/20</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Footnote</span>
+              <span style="font:400 13px/18px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">400 13/18</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Caption 1</span>
+              <span style="font:400 12px/16px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">400 12/16</span>
+            </div>
+            <div style="display:flex; align-items:baseline; padding:14px 0;">
+              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Caption 2</span>
+              <span style="font:400 11px/13px system-ui; color:#fff; flex:1;">Hello World</span>
+              <span style="font:400 12px/16px monospace; color:#636366;">400 11/13</span>
+            </div>
+          </div>
+        </div>`
+      });
+
+      // ── 间距 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Spacing" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Spacing Scale</span>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            ${[
+              ['xs', '4px', 4], ['sm', '8px', 8], ['md', '16px', 16],
+              ['lg', '24px', 24], ['xl', '32px', 32], ['2xl', '48px', 48]
+            ].map(([name, label, size]) => `
+              <div style="display:flex; align-items:center; gap:16px;">
+                <span style="width:60px; font:600 13px/18px monospace; color:#5E5CE6;">${name}</span>
+                <div style="width:${size}px; height:${size}px; background:#5E5CE6; border-radius:3px; opacity:0.7;"></div>
+                <div style="flex:1; height:${size}px; background:rgba(94,92,230,0.15); border-radius:3px; border:1px dashed rgba(94,92,230,0.3);"></div>
+                <span style="font:400 12px/16px monospace; color:#636366;">${label}</span>
+              </div>`).join('')}
+          </div>
+        </div>`
+      });
+
+      // ── 圆角 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Border Radius" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Border Radius</span>
+          <div style="display:flex; gap:24px; flex-wrap:wrap;">
+            ${[
+              ['sm', '6px'], ['md', '10px'], ['lg', '16px'], ['xl', '22px'], ['full', '9999px']
+            ].map(([name, val]) => `
+              <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+                <div style="width:80px; height:80px; border:2px solid #5E5CE6; border-radius:${val}; background:rgba(94,92,230,0.08);"></div>
+                <span style="font:600 12px/16px system-ui; color:#fff;">${name}</span>
+                <span style="font:400 11px/14px monospace; color:#636366;">${val}</span>
+              </div>`).join('')}
+          </div>
+        </div>`
+      });
+
+      // ── 阴影 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Shadows" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Shadows</span>
+          <div style="display:flex; gap:32px;">
+            <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
+              <div style="width:120px; height:80px; background:#1C1C1E; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>
+              <span style="font:600 12px/16px system-ui; color:#fff;">Small</span>
+              <span style="font:400 10px/14px monospace; color:#636366;">0 1px 3px</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
+              <div style="width:120px; height:80px; background:#1C1C1E; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
+              <span style="font:600 12px/16px system-ui; color:#fff;">Medium</span>
+              <span style="font:400 10px/14px monospace; color:#636366;">0 4px 12px</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
+              <div style="width:120px; height:80px; background:#1C1C1E; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.6);"></div>
+              <span style="font:600 12px/16px system-ui; color:#fff;">Large</span>
+              <span style="font:400 10px/14px monospace; color:#636366;">0 8px 24px</span>
+            </div>
+          </div>
+        </div>`
+      });
+
+      // ── 按钮样式 ──
+      renderer.writeHTML({
+        targetNodeId: 'ds-spec-content', mode: 'insert-children',
+        html: `<div layer-name="Buttons" style="padding:40px 48px 48px; display:flex; flex-direction:column; gap:24px;">
+          <span style="font:700 24px/30px system-ui; color:#fff;">Button Styles</span>
+          <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+            <div style="padding:14px 28px; background:#5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Primary</div>
+            <div style="padding:14px 28px; background:#2C2C2E; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Secondary</div>
+            <div style="padding:14px 28px; background:transparent; border:1.5px solid #5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#5E5CE6;">Outline</div>
+            <div style="padding:14px 28px; background:transparent; border-radius:14px; font:600 17px/22px system-ui; color:#0A84FF;">Text</div>
+            <div style="padding:14px 28px; background:#FF453A; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Destructive</div>
+            <div style="padding:14px 28px; background:#38383A; border-radius:14px; font:600 17px/22px system-ui; color:#636366;">Disabled</div>
+          </div>
+
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div style="padding:10px 20px; background:#5E5CE6; border-radius:10px; font:600 14px/18px system-ui; color:#fff;">Small</div>
+            <div style="padding:14px 28px; background:#5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Medium</div>
+            <div style="padding:18px 36px; background:#5E5CE6; border-radius:16px; font:600 20px/26px system-ui; color:#fff;">Large</div>
+          </div>
+        </div>`
+      });
+
+      // 组件库 Gallery
+      renderComponentGallery(renderer);
+
+      // 适应画面
+      canvas.fitToScreen();
+      console.log('🚀 Demo + Gallery created');
+    }, 200);
+
+    console.log('🎨 DesignCanvas ready');
+  </script>
+</body>
+</html>

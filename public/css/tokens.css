@@ -1,0 +1,76 @@
+/* tokens.css — Design Tokens */
+:root {
+  /* ── 背景 ── */
+  --dc-bg-canvas: #1a1a1a;
+  --dc-bg-primary: #000000;
+  --dc-bg-secondary: #1C1C1E;
+  --dc-bg-card: #1C1C1E;
+  --dc-bg-elevated: #2C2C2E;
+  --dc-bg-hover: #3A3A3C;
+
+  /* ── 文字 ── */
+  --dc-text-primary: #FFFFFF;
+  --dc-text-secondary: #8E8E93;
+  --dc-text-tertiary: #636366;
+  --dc-text-placeholder: #48484A;
+
+  /* ── 强调色 ── */
+  --dc-accent: #5E5CE6;
+  --dc-accent-hover: #7B79F1;
+  --dc-highlight: #0A84FF;
+  --dc-success: #30D158;
+  --dc-warning: #FF9F0A;
+  --dc-danger: #FF453A;
+
+  /* ── 边框 ── */
+  --dc-border: #38383A;
+  --dc-border-highlight: #5E5CE6;
+  --dc-border-hover: #0A84FF;
+
+  /* ── 网格 ── */
+  --dc-grid-color: rgba(255, 255, 255, 0.04);
+  --dc-grid-dot: rgba(255, 255, 255, 0.08);
+  --dc-grid-size: 20px;
+
+  /* ── 字体 ── */
+  --dc-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --dc-font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+
+  --dc-font-large-title: 700 34px/41px var(--dc-font-sans);
+  --dc-font-title1: 700 28px/34px var(--dc-font-sans);
+  --dc-font-title2: 700 22px/28px var(--dc-font-sans);
+  --dc-font-title3: 600 20px/25px var(--dc-font-sans);
+  --dc-font-headline: 600 17px/22px var(--dc-font-sans);
+  --dc-font-body: 400 17px/22px var(--dc-font-sans);
+  --dc-font-callout: 400 16px/21px var(--dc-font-sans);
+  --dc-font-subhead: 400 15px/20px var(--dc-font-sans);
+  --dc-font-footnote: 400 13px/18px var(--dc-font-sans);
+  --dc-font-caption: 400 12px/16px var(--dc-font-sans);
+  --dc-font-caption2: 400 11px/13px var(--dc-font-sans);
+
+  /* ── 间距 ── */
+  --dc-spacing-xs: 4px;
+  --dc-spacing-sm: 8px;
+  --dc-spacing-md: 16px;
+  --dc-spacing-lg: 24px;
+  --dc-spacing-xl: 32px;
+  --dc-spacing-2xl: 48px;
+
+  /* ── 圆角 ── */
+  --dc-radius-sm: 6px;
+  --dc-radius-md: 10px;
+  --dc-radius-lg: 16px;
+  --dc-radius-xl: 22px;
+  --dc-radius-full: 9999px;
+
+  /* ── 阴影 ── */
+  --dc-shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --dc-shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --dc-shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+
+  /* ── 动画 ── */
+  --dc-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --dc-duration-fast: 150ms;
+  --dc-duration-normal: 250ms;
+  --dc-duration-slow: 400ms;
+}
