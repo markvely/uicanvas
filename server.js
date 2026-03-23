@@ -7,6 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { WSBridge } from './lib/ws-bridge.js';
 import { ArtboardManager } from './lib/artboard-manager.js';
+import { ProjectManager } from './lib/project-manager.js';
 import { registerTools } from './lib/mcp-tools.js';
 
 const PORT = process.env.PORT || 3200;
@@ -23,6 +24,7 @@ const wss = new WebSocketServer({ server: httpServer });
 
 const bridge = new WSBridge();
 const artboards = new ArtboardManager();
+const project = new ProjectManager();
 
 wss.on('connection', (ws) => {
   bridge.addClient(ws);
@@ -39,15 +41,15 @@ wss.on('connection', (ws) => {
 
 // ── MCP Server (高层 API) ──────────────────────────────────
 const mcpServer = new McpServer(
-  { name: 'design-canvas', version: '1.0.0' },
+  { name: 'uicanvas', version: '1.1.0' },
   { capabilities: { tools: {} } }
 );
-registerTools(mcpServer, bridge, artboards);
+registerTools(mcpServer, bridge, artboards, project);
 
 // ── 启动 ───────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
   if (!isStdio) {
-    console.log(`\n  🎨 DesignCanvas running at http://localhost:${PORT}\n`);
+    console.log(`\n  🎨 UICanvas running at http://localhost:${PORT}\n`);
   }
 });
 
