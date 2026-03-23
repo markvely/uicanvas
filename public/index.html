@@ -75,6 +75,7 @@
     import { registerComponents } from '/js/components.js';
     import { HistoryManager } from '/js/history.js';
     import { renderComponentGallery } from '/components/index.js';
+    import { generateSpecTemplate } from '/components/design-spec-template.js';
 
     // 初始化
     const viewport = document.getElementById('canvas-viewport');
@@ -100,12 +101,7 @@
     }
 
     history.onChange(updateButtonStates);
-
-    // 选中状态变化时更新导出按钮
-    const origSelect = renderer.select.bind(renderer);
-    renderer.select = (id) => { origSelect(id); updateButtonStates(); };
-    const origDeselect = renderer.deselectAll.bind(renderer);
-    renderer.deselectAll = () => { origDeselect(); updateButtonStates(); };
+    renderer.onSelectionChange = () => updateButtonStates();
 
     // ── Undo/Redo ──
     function getContentEl(artboardId) {
@@ -184,28 +180,13 @@
       updateButtonStates();
     }
 
-    /** 将计算样式内联到克隆节点 */
+    /** 将计算样式内联到克隆节点 (用 cssText 一次性设置所有属性) */
     function inlineStyles(source, target) {
       if (source.nodeType !== 1) return;
-      const computed = window.getComputedStyle(source);
-      const important = [
-        'display', 'flex-direction', 'align-items', 'justify-content', 'gap',
-        'padding', 'margin', 'width', 'height', 'min-height', 'max-height',
-        'background', 'background-color', 'background-image',
-        'color', 'font', 'font-size', 'font-weight', 'font-family', 'line-height', 'letter-spacing',
-        'border', 'border-radius', 'box-shadow', 'text-align', 'white-space',
-        'overflow', 'opacity', 'position', 'top', 'left', 'right', 'bottom',
-        'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'flex-wrap', 'order',
-        'text-decoration', 'text-transform', 'vertical-align',
-        'border-top', 'border-bottom', 'border-left', 'border-right',
-      ];
-      for (const prop of important) {
-        target.style.setProperty(prop, computed.getPropertyValue(prop));
-      }
-      const srcChildren = source.children;
-      const tgtChildren = target.children;
-      for (let i = 0; i < srcChildren.length && i < tgtChildren.length; i++) {
-        inlineStyles(srcChildren[i], tgtChildren[i]);
+      target.style.cssText = window.getComputedStyle(source).cssText;
+      const src = source.children, tgt = target.children;
+      for (let i = 0; i < src.length && i < tgt.length; i++) {
+        inlineStyles(src[i], tgt[i]);
       }
     }
 
@@ -309,249 +290,17 @@
       });
 
       // ═══════════════════════════════════════════
-      // Design Spec 画板
+      // Design Spec 画板 (复用 generateSpecTemplate)
       // ═══════════════════════════════════════════
       renderer.create({
         id: 'ds-spec', name: 'Design System — Spec Sheet',
-        width: 1200, height: 2400, left: 470, top: 0,
-        styles: { backgroundColor: '#111113', borderRadius: '12px' }
+        width: 680, height: 1400, left: 470, top: 0,
+        styles: { backgroundColor: '#000', borderRadius: '12px' }
       });
-
-      // ── 标题 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Header" style="padding:48px 48px 0; display:flex; flex-direction:column; gap:8px;">
-          <span style="font:800 42px/48px system-ui; color:#fff; letter-spacing:-1px;">DesignCanvas</span>
-          <span style="font:400 18px/24px system-ui; color:#636366;">Design System Specification v1.0</span>
-          <div style="height:1px; background:linear-gradient(90deg, #5E5CE6, transparent); margin-top:16px;"></div>
-        </div>`
-      });
-
-      // ── 配色板 ──
-      const colorSwatch = (name, hex, textColor = '#fff') =>
-        `<div style="display:flex; flex-direction:column; gap:6px; align-items:center;">
-          <div style="width:80px; height:80px; border-radius:16px; background:${hex}; box-shadow:0 4px 16px ${hex}44;"></div>
-          <span style="font:600 12px/16px system-ui; color:#fff;">${name}</span>
-          <span style="font:400 11px/14px monospace; color:#636366;">${hex}</span>
-        </div>`;
 
       renderer.writeHTML({
         targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Colors Section" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Color Palette</span>
-
-          <div style="display:flex; flex-direction:column; gap:16px;">
-            <span style="font:600 14px/18px system-ui; color:#8E8E93; text-transform:uppercase; letter-spacing:1px;">Backgrounds</span>
-            <div style="display:flex; gap:20px; flex-wrap:wrap;">
-              ${colorSwatch('Canvas', '#1A1A1A')}
-              ${colorSwatch('Primary', '#000000')}
-              ${colorSwatch('Secondary', '#1C1C1E')}
-              ${colorSwatch('Elevated', '#2C2C2E')}
-              ${colorSwatch('Hover', '#3A3A3C')}
-            </div>
-          </div>
-
-          <div style="display:flex; flex-direction:column; gap:16px;">
-            <span style="font:600 14px/18px system-ui; color:#8E8E93; text-transform:uppercase; letter-spacing:1px;">Accents & Status</span>
-            <div style="display:flex; gap:20px; flex-wrap:wrap;">
-              ${colorSwatch('Accent', '#5E5CE6')}
-              ${colorSwatch('Accent Hover', '#7B79F1')}
-              ${colorSwatch('Highlight', '#0A84FF')}
-              ${colorSwatch('Success', '#30D158')}
-              ${colorSwatch('Warning', '#FF9F0A')}
-              ${colorSwatch('Danger', '#FF453A')}
-            </div>
-          </div>
-
-          <div style="display:flex; flex-direction:column; gap:16px;">
-            <span style="font:600 14px/18px system-ui; color:#8E8E93; text-transform:uppercase; letter-spacing:1px;">Text & Borders</span>
-            <div style="display:flex; gap:20px; flex-wrap:wrap;">
-              ${colorSwatch('Text Primary', '#FFFFFF')}
-              ${colorSwatch('Text Secondary', '#8E8E93')}
-              ${colorSwatch('Text Tertiary', '#636366')}
-              ${colorSwatch('Border', '#38383A')}
-              ${colorSwatch('Border Active', '#5E5CE6')}
-            </div>
-          </div>
-        </div>`
-      });
-
-      // ── 渐变色 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Gradients" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Gradients</span>
-          <div style="display:flex; gap:20px;">
-            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
-              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #5E5CE6, #BF5AF2);"></div>
-              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Accent → Purple</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
-              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #0A84FF, #30D158);"></div>
-              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Blue → Green</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
-              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #FF9F0A, #FF453A);"></div>
-              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Amber → Red</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
-              <div style="width:200px; height:80px; border-radius:16px; background:linear-gradient(135deg, #1C1C1E, #2C2C2E); border:1px solid #38383A;"></div>
-              <span style="font:500 12px/16px system-ui; color:#8E8E93;">Surface Dark</span>
-            </div>
-          </div>
-        </div>`
-      });
-
-      // ── 字体排版 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Typography" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Typography</span>
-          <span style="font:400 14px/20px system-ui; color:#636366;">Font Family: SF Pro / system-ui &nbsp;|&nbsp; Mono: SF Mono / monospace</span>
-
-          <div style="display:flex; flex-direction:column; gap:0;">
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Large Title</span>
-              <span style="font:700 34px/41px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">700 34/41</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Title 1</span>
-              <span style="font:700 28px/34px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">700 28/34</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Title 2</span>
-              <span style="font:700 22px/28px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">700 22/28</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Title 3</span>
-              <span style="font:600 20px/25px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">600 20/25</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Headline</span>
-              <span style="font:600 17px/22px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">600 17/22</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Body</span>
-              <span style="font:400 17px/22px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">400 17/22</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Callout</span>
-              <span style="font:400 16px/21px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">400 16/21</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Subhead</span>
-              <span style="font:400 15px/20px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">400 15/20</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Footnote</span>
-              <span style="font:400 13px/18px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">400 13/18</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0; border-bottom:1px solid #1C1C1E;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Caption 1</span>
-              <span style="font:400 12px/16px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">400 12/16</span>
-            </div>
-            <div style="display:flex; align-items:baseline; padding:14px 0;">
-              <span style="width:180px; font:400 13px/18px monospace; color:#5E5CE6;">Caption 2</span>
-              <span style="font:400 11px/13px system-ui; color:#fff; flex:1;">Hello World</span>
-              <span style="font:400 12px/16px monospace; color:#636366;">400 11/13</span>
-            </div>
-          </div>
-        </div>`
-      });
-
-      // ── 间距 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Spacing" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Spacing Scale</span>
-          <div style="display:flex; flex-direction:column; gap:12px;">
-            ${[
-              ['xs', '4px', 4], ['sm', '8px', 8], ['md', '16px', 16],
-              ['lg', '24px', 24], ['xl', '32px', 32], ['2xl', '48px', 48]
-            ].map(([name, label, size]) => `
-              <div style="display:flex; align-items:center; gap:16px;">
-                <span style="width:60px; font:600 13px/18px monospace; color:#5E5CE6;">${name}</span>
-                <div style="width:${size}px; height:${size}px; background:#5E5CE6; border-radius:3px; opacity:0.7;"></div>
-                <div style="flex:1; height:${size}px; background:rgba(94,92,230,0.15); border-radius:3px; border:1px dashed rgba(94,92,230,0.3);"></div>
-                <span style="font:400 12px/16px monospace; color:#636366;">${label}</span>
-              </div>`).join('')}
-          </div>
-        </div>`
-      });
-
-      // ── 圆角 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Border Radius" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Border Radius</span>
-          <div style="display:flex; gap:24px; flex-wrap:wrap;">
-            ${[
-              ['sm', '6px'], ['md', '10px'], ['lg', '16px'], ['xl', '22px'], ['full', '9999px']
-            ].map(([name, val]) => `
-              <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
-                <div style="width:80px; height:80px; border:2px solid #5E5CE6; border-radius:${val}; background:rgba(94,92,230,0.08);"></div>
-                <span style="font:600 12px/16px system-ui; color:#fff;">${name}</span>
-                <span style="font:400 11px/14px monospace; color:#636366;">${val}</span>
-              </div>`).join('')}
-          </div>
-        </div>`
-      });
-
-      // ── 阴影 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Shadows" style="padding:40px 48px 0; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Shadows</span>
-          <div style="display:flex; gap:32px;">
-            <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
-              <div style="width:120px; height:80px; background:#1C1C1E; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>
-              <span style="font:600 12px/16px system-ui; color:#fff;">Small</span>
-              <span style="font:400 10px/14px monospace; color:#636366;">0 1px 3px</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
-              <div style="width:120px; height:80px; background:#1C1C1E; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
-              <span style="font:600 12px/16px system-ui; color:#fff;">Medium</span>
-              <span style="font:400 10px/14px monospace; color:#636366;">0 4px 12px</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
-              <div style="width:120px; height:80px; background:#1C1C1E; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.6);"></div>
-              <span style="font:600 12px/16px system-ui; color:#fff;">Large</span>
-              <span style="font:400 10px/14px monospace; color:#636366;">0 8px 24px</span>
-            </div>
-          </div>
-        </div>`
-      });
-
-      // ── 按钮样式 ──
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: `<div layer-name="Buttons" style="padding:40px 48px 48px; display:flex; flex-direction:column; gap:24px;">
-          <span style="font:700 24px/30px system-ui; color:#fff;">Button Styles</span>
-          <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-            <div style="padding:14px 28px; background:#5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Primary</div>
-            <div style="padding:14px 28px; background:#2C2C2E; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Secondary</div>
-            <div style="padding:14px 28px; background:transparent; border:1.5px solid #5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#5E5CE6;">Outline</div>
-            <div style="padding:14px 28px; background:transparent; border-radius:14px; font:600 17px/22px system-ui; color:#0A84FF;">Text</div>
-            <div style="padding:14px 28px; background:#FF453A; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Destructive</div>
-            <div style="padding:14px 28px; background:#38383A; border-radius:14px; font:600 17px/22px system-ui; color:#636366;">Disabled</div>
-          </div>
-
-          <div style="display:flex; gap:16px; align-items:center;">
-            <div style="padding:10px 20px; background:#5E5CE6; border-radius:10px; font:600 14px/18px system-ui; color:#fff;">Small</div>
-            <div style="padding:14px 28px; background:#5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Medium</div>
-            <div style="padding:18px 36px; background:#5E5CE6; border-radius:16px; font:600 20px/26px system-ui; color:#fff;">Large</div>
-          </div>
-        </div>`
+        html: generateSpecTemplate('UICanvas'),
       });
 
       // 组件库 Gallery

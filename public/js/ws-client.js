@@ -14,15 +14,14 @@ export class WSClient {
   /** 在写操作前保存快照 */
   _saveSnapshot(targetNodeId, commandType) {
     if (!this.history) return;
-    // 找到目标节点所属的画板
     const world = this.renderer.world;
     const targetEl = world.querySelector(`[data-node-id="${targetNodeId}"]`);
     if (!targetEl) return;
-    // 找到最近的画板
-    const artboardEl = targetEl.closest('.artboard');
-    if (!artboardEl) return;
-    const artboardId = artboardEl.dataset.artboardId;
-    const contentEl = artboardEl.querySelector('.artboard-content');
+    // 找到最近的画板包装器
+    const wrapper = targetEl.closest('[data-artboard-id]');
+    if (!wrapper) return;
+    const artboardId = wrapper.dataset.artboardId;
+    const contentEl = wrapper.querySelector('.artboard-content');
     if (contentEl) {
       this.history.pushSnapshot(artboardId, contentEl, commandType);
     }

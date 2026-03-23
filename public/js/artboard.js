@@ -7,6 +7,8 @@ export class ArtboardRenderer {
     this.artboardEls = new Map();
     this.selectedId = null;
     this._nodeIdCounter = 0;
+    /** @type {function|null} 选中状态变化回调 */
+    this.onSelectionChange = null;
   }
 
   /** 生成唯一节点 ID */
@@ -76,14 +78,13 @@ export class ArtboardRenderer {
     }
     wrapper.appendChild(body);
 
-    // ── 内容容器 ──
+    // ── 内容容器 (undo/redo 快照的目标) ──
     const content = document.createElement('div');
     content.className = 'artboard-content';
     content.dataset.nodeId = `${meta.id}-content`;
     content.style.width = '100%';
     content.style.height = '100%';
     content.style.position = 'relative';
-    content.style.overflow = 'hidden';
     content.style.display = 'flex';
     content.style.flexDirection = 'column';
     body.appendChild(content);
@@ -142,7 +143,6 @@ export class ArtboardRenderer {
   }
 
   select(id) {
-    // 取消之前选中
     if (this.selectedId) {
       const prev = this.artboardEls.get(this.selectedId);
       if (prev) prev.classList.remove('selected');
@@ -150,6 +150,7 @@ export class ArtboardRenderer {
     this.selectedId = id;
     const el = this.artboardEls.get(id);
     if (el) el.classList.add('selected');
+    this.onSelectionChange?.(id);
   }
 
   deselectAll() {
@@ -157,6 +158,7 @@ export class ArtboardRenderer {
       const prev = this.artboardEls.get(this.selectedId);
       if (prev) prev.classList.remove('selected');
       this.selectedId = null;
+      this.onSelectionChange?.(null);
     }
   }
 
@@ -284,7 +286,7 @@ export class ArtboardRenderer {
     for (const id of nodeIds) {
       const el = this.world.querySelector(`[data-node-id="${id}"]`);
       if (el) {
-        if (el.classList.contains('artboard')) {
+        if (el.dataset.artboardId) {
           this.artboardEls.delete(el.dataset.artboardId);
         }
         el.remove();
@@ -341,33 +343,54 @@ export class ArtboardRenderer {
     }
   }
 
-  /** 截图 (使用 html2canvas) */
+  /** 截图 (SVG foreignObject, 无 CDN 依赖) */
   async getScreenshot(nodeId, scale = 1) {
     const el = this.world.querySelector(`[data-node-id="${nodeId}"]`);
     if (!el) return null;
 
-    // 加载 html2canvas
-    if (!window.html2canvas) {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    if (w === 0 || h === 0) return { error: 'Element has zero dimensions', width: w, height: h };
 
     try {
-      const canvas = await window.html2canvas(el, {
-        scale,
-        backgroundColor: null,
-        useCORS: true,
-        logging: false,
+      const clone = el.cloneNode(true);
+      this._inlineAllStyles(el, clone);
+
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const fo = `<foreignObject width="${w}" height="${h}">${new XMLSerializer().serializeToString(clone)}</foreignObject>`;
+      const svg = `<svg xmlns="${svgNS}" width="${w}" height="${h}">${fo}</svg>`;
+      const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const dataUrl = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = w * scale;
+          canvas.height = h * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG render failed')); };
+        img.src = url;
       });
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
       return { imageData: dataUrl.split(',')[1], mimeType: 'image/jpeg' };
     } catch (err) {
-      return { error: err.message, width: el.offsetWidth, height: el.offsetHeight };
+      return { error: err.message, width: w, height: h };
+    }
+  }
+
+  /** 内联所有计算样式到克隆节点 */
+  _inlineAllStyles(source, target) {
+    if (source.nodeType !== 1) return;
+    target.style.cssText = window.getComputedStyle(source).cssText;
+    const src = source.children, tgt = target.children;
+    for (let i = 0; i < src.length && i < tgt.length; i++) {
+      this._inlineAllStyles(src[i], tgt[i]);
     }
   }
 
