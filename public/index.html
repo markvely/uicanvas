@@ -117,7 +117,21 @@
       history.redo(getContentEl);
     });
 
-    // ── 导出 PNG (原生 SVG foreignObject 方式, 无依赖) ──
+    // ── 导出 PNG (dom-to-image-more) ──
+    let _domToImageReady = null;
+    function loadDomToImage() {
+      if (_domToImageReady) return _domToImageReady;
+      _domToImageReady = new Promise((resolve, reject) => {
+        if (window.domtoimage) return resolve(window.domtoimage);
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/dom-to-image-more@3.4.5/dist/dom-to-image-more.min.js';
+        s.onload = () => resolve(window.domtoimage);
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      return _domToImageReady;
+    }
+
     async function exportSelectedArtboard() {
       if (!renderer.selectedId) return;
       const el = renderer.artboardEls.get(renderer.selectedId);
@@ -127,66 +141,36 @@
       btnExport.style.opacity = '0.5';
 
       try {
+        const domtoimage = await loadDomToImage();
         const artboardBody = el.querySelector('.artboard') || el;
         const w = artboardBody.offsetWidth;
         const h = artboardBody.offsetHeight;
+
         const scale = 2;
+        const dataUrl = await domtoimage.toPng(artboardBody, {
+          width: w * scale,
+          height: h * scale,
+          style: {
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            width: `${w}px`,
+            height: `${h}px`,
+          },
+        });
 
-        // 深拷贝并内联所有计算样式
-        const clone = artboardBody.cloneNode(true);
-        inlineStyles(artboardBody, clone);
-
-        const svgNS = 'http://www.w3.org/2000/svg';
-        const fo = `<foreignObject width="${w}" height="${h}">${new XMLSerializer().serializeToString(clone)}</foreignObject>`;
-        const svgMarkup = `<svg xmlns="${svgNS}" width="${w}" height="${h}">${fo}</svg>`;
-        const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = w * scale;
-          canvas.height = h * scale;
-          const ctx = canvas.getContext('2d');
-          ctx.scale(scale, scale);
-          ctx.drawImage(img, 0, 0);
-          URL.revokeObjectURL(url);
-
-          const dataUrl = canvas.toDataURL('image/png');
-          const fileName = renderer.getArtboardFileName(renderer.selectedId) + '.png';
-          const link = document.createElement('a');
-          link.download = fileName;
-          link.href = dataUrl;
-          link.click();
-
-          btnExport.disabled = false;
-          btnExport.style.opacity = '';
-          updateButtonStates();
-        };
-        img.onerror = () => {
-          console.error('[export] SVG rendering failed');
-          URL.revokeObjectURL(url);
-          btnExport.disabled = false;
-          btnExport.style.opacity = '';
-          updateButtonStates();
-        };
-        img.src = url;
-        return; // async callback handles cleanup
+        const fileName = renderer.getArtboardFileName(renderer.selectedId) + '.png';
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       } catch (err) {
         console.error('[export] Failed:', err);
-      }
-      btnExport.disabled = false;
-      btnExport.style.opacity = '';
-      updateButtonStates();
-    }
-
-    /** 将计算样式内联到克隆节点 (用 cssText 一次性设置所有属性) */
-    function inlineStyles(source, target) {
-      if (source.nodeType !== 1) return;
-      target.style.cssText = window.getComputedStyle(source).cssText;
-      const src = source.children, tgt = target.children;
-      for (let i = 0; i < src.length && i < tgt.length; i++) {
-        inlineStyles(src[i], tgt[i]);
+      } finally {
+        btnExport.disabled = false;
+        btnExport.style.opacity = '';
+        updateButtonStates();
       }
     }
 
