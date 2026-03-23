@@ -1,7 +1,7 @@
 {
   "name": "design-canvas-mcp",
   "version": "1.0.0",
-  "description": "轻量自托管设计画布 MCP Server — Antigravity UI 设计预览工具",
+  "description": "Open-source design canvas with MCP integration — AI agents create, inspect, and manipulate UI designs on an infinite canvas",
   "type": "module",
   "main": "server.js",
   "scripts": {
