@@ -22,3 +22,5 @@ npm-debug.log*
 # Build artifacts
 dist/
 build/
+uicanvas-*.vsix
+.vscode/

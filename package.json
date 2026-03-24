@@ -1,17 +1,39 @@
 {
   "name": "uicanvas",
-  "version": "1.0.0",
+  "displayName": "UICanvas",
+  "version": "1.1.0",
+  "publisher": "markvely",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/markvely/uicanvas.git"
+  },
   "description": "UI preview canvas for developers. See AI-generated designs instantly with built-in component library. No Figma needed.",
   "type": "module",
-  "main": "server.js",
+  "main": "extension.cjs",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "uicanvas.start",
+        "title": "UICanvas: Open Artboard"
+      }
+    ]
+  },
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "vscode:prepublish": "npm install"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "express": "^5.1.0",
     "ws": "^8.18.2",
     "html-to-image": "^1.11.11"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0"
   }
 }
