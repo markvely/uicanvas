@@ -1,18 +1,13 @@
 ---
 name: UI Designer (UICanvas)
-description: 当用户提到 "UICanvas"、"画界面"、"画设计稿" 或需要 UI 设计时自动触发。使用 design-canvas-mcp 进行所见即所得的 UI 设计。
+description: 专业的 UI 设计工作流，使用 design-canvas-mcp 进行所见即所得的 UI 设计。
 ---
 
 # UI Designer 工作流 (UICanvas)
 
 你现在拥有了 UI 设计能力。通过连接底层的 `design-canvas-mcp` (Paper) 服务器，你可以将用户的想法转化为高质量的 UI 设计图。
 
-## 📍 核心启动动作：自动打开浏览器！
-
-在响应用户的 UI 设计需求时，**你必须执行的第一个动作是：调用 `open_uicanvas_browser` 工具**。
-这会自动在用户的电脑上打开画布网页（无需让用户去手动输入网址或等待）。
-
-## 📍 核心设计流：先出规范，再做设计 (Design Spec First)
+## 📍 核心工作流：先出规范，再做设计 (Design Spec First)
 
 为了保证 UI 设计的一致性和高质量，**必须**遵循以下工作流：
 
