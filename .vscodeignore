@@ -1,0 +1,8 @@
+.git
+.agents
+agent-skills
+.vscode
+*.vsix
+.DS_Store
+node_modules/@types
+node_modules/typescript
