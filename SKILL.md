@@ -74,6 +74,7 @@ This ensures consistent, high-quality output that looks like it came from a prof
 
 | Tool | Description |
 |------|-------------|
+| `open_uicanvas_browser` | Open the UICanvas frontend in the user's default browser |
 | `create_artboard` | Create a new artboard with structured naming |
 | `write_html` | Render HTML/CSS into an artboard |
 | `get_screenshot` | Capture a screenshot for AI self-verification |
