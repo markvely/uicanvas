@@ -7,7 +7,7 @@
 ## 技能文档列表
 
 👉 **[Antigravity 技能/工作流](./../.agents/workflows/ui-designer.md)** 
-*(如果你正在呼叫 Antigravity，只需运行项目根目录下的 `./install-antigravity.sh`，即可将此设计工作流全局安装到你电脑的所有代码项目中！)*
+(*如果你正在呼叫 Antigravity，只需 `@` 提及此工作流，它就会自动理解完整的 UI 设计规范体系。* `/.agents` 下存放了让模型自身理解的最佳实践指示。)
 
 👉 **[给 Claude Code 的使用配置](./claude-code.md)**  
 *(如何在原生 Claude Code 命令行挂载此 MCP 和对应的 Prompt 指南)*

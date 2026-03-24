@@ -43,14 +43,7 @@ Then open `http://localhost:3200` in your browser.
 ## 🔌 Connect to Your AI Agent
 
 ### Antigravity
-To make the `/UI Designer` workflow and tools available across **all your local projects**, run the installation script:
-
-```bash
-chmod +x install-antigravity.sh
-./install-antigravity.sh
-```
-
-Follow the prompt to update your `mcp_config.json`, then restart Antigravity.
+Already built-in — just use the `/UI Designer` workflow.
 
 ### Claude Code
 ```bash
