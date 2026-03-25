@@ -40,7 +40,13 @@ function activate(context) {
             stdio: 'pipe',
         });
         
-        serverProcess.stdout.on('data', (data) => console.log(`[UICanvas] ${data}`));
+        serverProcess.stdout.on('data', (data) => {
+            const str = data.toString();
+            console.log(`[UICanvas] ${str}`);
+            if (str.includes('__UICANVAS_OPEN_PANEL__')) {
+                openPanel(context);
+            }
+        });
         serverProcess.stderr.on('data', (data) => console.error(`[UICanvas Error] ${data}`));
         serverProcess.on('close', (code) => {
             console.log(`[UICanvas] HTTP server exited with code ${code}`);
@@ -48,12 +54,7 @@ function activate(context) {
         });
     }
 
-    // ── 3. Auto-open Webview panel after brief delay ───────
-    setTimeout(() => {
-        openPanel(context);
-    }, 2000); // Give the HTTP server time to start
-
-    // ── 4. Register manual command (for re-opening) ────────
+    // ── 3. Register manual command (for re-opening) ────────
     let disposable = vscode.commands.registerCommand('uicanvas.start', function () {
         openPanel(context);
     });

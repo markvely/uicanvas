@@ -70,26 +70,46 @@ httpServer.listen(PORT, () => {
             }
           }
         } else if (msg.type && msg.requestId) {
-          // 这是 sendCommand 请求，转发给第一个 Webview 客户端
-          for (const client of bridge.clients) {
-            if (client !== ws && client.readyState === 1) {
-              client.send(raw.toString());
-              // 监听这个客户端的响应，转发回发送者
-              const onReply = (replyRaw) => {
-                try {
-                  const reply = JSON.parse(replyRaw.toString());
-                  if (reply.requestId === msg.requestId) {
-                    ws.send(replyRaw.toString());
-                    client.removeListener('message', onReply);
-                  }
-                } catch { /* ignore */ }
-              };
-              client.on('message', onReply);
-              // 超时清理
-              setTimeout(() => client.removeListener('message', onReply), 20000);
-              break;
+          // 收到带 ID 的具体请求命令，触发 IDE 自动打开/前置画板
+          console.log('__UICANVAS_OPEN_PANEL__');
+
+          const dispatch = (attempts = 0) => {
+            let sent = false;
+            // 这是 sendCommand 请求，转发给第一个 Webview 客户端
+            for (const client of bridge.clients) {
+              if (client !== ws && client.readyState === 1) {
+                client.send(raw.toString());
+                sent = true;
+                // 监听这个客户端的响应，转发回发送者
+                const onReply = (replyRaw) => {
+                  try {
+                    const reply = JSON.parse(replyRaw.toString());
+                    if (reply.requestId === msg.requestId) {
+                      ws.send(replyRaw.toString());
+                      client.removeListener('message', onReply);
+                    }
+                  } catch { /* ignore */ }
+                };
+                client.on('message', onReply);
+                // 超时清理
+                setTimeout(() => client.removeListener('message', onReply), 20000);
+                break;
+              }
             }
-          }
+
+            // 如果没有活跃的 Webview 客户端（面板正在加载），进行等待重试（最多 10 秒）
+            if (!sent && attempts < 20) {
+              setTimeout(() => dispatch(attempts + 1), 500);
+            } else if (!sent) {
+              // 最终超时失败，回推 error 防止发送方无限等待
+              ws.send(JSON.stringify({
+                requestId: msg.requestId,
+                error: 'Timeout waiting for Webview panel to open and connect'
+              }));
+            }
+          };
+
+          dispatch();
         }
       } catch { /* ignore non-JSON */ }
     });
