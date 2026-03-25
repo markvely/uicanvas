@@ -61,10 +61,7 @@ function activate(context) {
         serverProcess.stdout.on('data', (data) => {
             const str = data.toString();
             console.log(`[UICanvas] ${str}`);
-            // 服务器就绪后自动打开面板（不抢焦点），确保 Webview 客户端提前连接
-            if (str.includes('UICanvas running at')) {
-                openPanel(context, true);
-            }
+            // 仅在收到 MCP 命令触发信号时才打开面板（不主动弹出）
             if (str.includes('__UICANVAS_OPEN_PANEL__')) {
                 openPanel(context, false);
             }

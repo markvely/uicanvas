@@ -84,6 +84,9 @@ export class WSClient {
 
   async _dispatch(type, params) {
     switch (type) {
+      case '__open_canvas__':
+        return { connected: true, timestamp: Date.now() };
+
       case 'get_basic_info':
         return this.renderer.getBasicInfo();
 
