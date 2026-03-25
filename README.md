@@ -68,6 +68,13 @@ Add to your MCP client config (Cursor, Claude Desktop, etc.):
 
 Now your AI agent can design UI directly on the canvas! 🎉
 
+### 🚨 Critical Rules for AI Agents
+
+If you are an AI Coding Agent reading this documentation to understand how to use UICanvas, **you MUST explicitly obey the following boundaries**:
+1. **Never write custom WebSocket scripts**: You are strictly forbidden from writing Node.js, Python, or shell scripts to connect to `localhost:3200`.
+2. **Use MCP Tools Only**: You must interact with the canvas EXCLUSIVELY through the provided MCP tools (`init_project`, `create_artboard`, `write_html`, etc.).
+3. **If Tools Are Missing**: If you do not see these tools in your available environment, **STOP IMMEDIATELY**. Do not attempt to reverse-engineer the WebSocket protocol. Tell the user: *"I cannot find the UICanvas MCP tools. Please Reload your VSCode Window or start a new Agent chat session so the tools can mount."*
+
 ## 🏗️ How It Works
 
 ```
