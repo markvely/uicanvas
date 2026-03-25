@@ -25,3 +25,6 @@ build/
 uicanvas-*.vsix
 .vscode/
 PUBLISHING.md
+.agents/
+agent-skills/
+SKILL.md
