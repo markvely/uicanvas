@@ -55,7 +55,8 @@ httpServer.listen(PORT, () => {
   // Port bound successfully — create WebSocket server
   const wss = new WebSocketServer({ server: httpServer });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    ws.isRemoteStdio = req && req.url ? req.url.includes('role=stdio') : false;
     bridge.addClient(ws);
 
     // Re-broadcast: 当收到来自远程 stdio 进程转发的消息时，
@@ -77,9 +78,9 @@ httpServer.listen(PORT, () => {
 
           const dispatch = (attempts = 0) => {
             let sent = false;
-            // 这是 sendCommand 请求，转发给第一个 Webview 客户端
+            // 这是 sendCommand 请求，转发给第一个真正的 Webview 客户端（排除其他 stdio 桥接进程）
             for (const client of bridge.clients) {
-              if (client !== ws && client.readyState === 1) {
+              if (client !== ws && client.readyState === 1 && !client.isRemoteStdio) {
                 client.send(raw.toString());
                 sent = true;
                 // 监听这个客户端的响应，转发回发送者
@@ -134,7 +135,7 @@ httpServer.listen(PORT, () => {
 // ── stdio 远程桥接 ─────────────────────────────────────────
 
 function connectAsRemoteClient() {
-  const url = `ws://localhost:${PORT}`;
+  const url = `ws://localhost:${PORT}/?role=stdio`;
   const ws = new WebSocket(url);
 
   ws.on('open', () => {
