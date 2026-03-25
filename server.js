@@ -5,11 +5,15 @@ import { WebSocketServer } from 'ws';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
 import { WSBridge } from './lib/ws-bridge.js';
 import { ArtboardManager } from './lib/artboard-manager.js';
 import { ProjectManager } from './lib/project-manager.js';
 import { registerTools } from './lib/mcp-tools.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3200;
 const isStdio = process.argv.includes('--stdio');
 
@@ -20,7 +24,7 @@ const project = new ProjectManager();
 
 // ── MCP Server (高层 API) ──────────────────────────────────
 const mcpServer = new McpServer(
-  { name: 'uicanvas', version: '1.1.5' },
+  { name: 'uicanvas', version: '1.1.6' },
   { capabilities: { tools: {} } }
 );
 registerTools(mcpServer, bridge, artboards, project);
@@ -31,8 +35,8 @@ registerTools(mcpServer, bridge, artboards, project);
 // but if the port is already taken by another instance, we
 // simply skip it and keep the MCP channel alive.
 const app = express();
-app.use(express.static('public'));
-app.use('/components', express.static('components'));
+app.use(express.static(join(__dirname, 'public')));
+app.use('/components', express.static(join(__dirname, 'components')));
 
 const httpServer = createServer(app);
 
