@@ -6,3 +6,4 @@ agent-skills
 .DS_Store
 node_modules/@types
 node_modules/typescript
+PUBLISHING.md
