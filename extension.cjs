@@ -53,11 +53,17 @@ async function activate(context) {
             stdio: 'pipe',
         });
 
+        // 修复流读取问题，按行缓冲避免数据截断
+        let outBuf = '';
         serverProcess.stdout.on('data', (data) => {
-            const str = data.toString();
-            console.log(`[UICanvas] ${str}`);
-            if (str.includes('__UICANVAS_OPEN_PANEL__')) {
-                openPanel(context, false);
+            outBuf += data.toString();
+            const lines = outBuf.split('\n');
+            outBuf = lines.pop(); // 保留不完整的一行
+            for (const line of lines) {
+                console.log(`[UICanvas] ${line}`);
+                if (line.includes('__UICANVAS_OPEN_PANEL__')) {
+                    openPanel(context, false);
+                }
             }
         });
         serverProcess.stderr.on('data', (data) => console.error(`[UICanvas Error] ${data}`));
@@ -99,10 +105,49 @@ async function activate(context) {
     context.subscriptions.push(disposable);
 }
 
+function getWebviewHTML(port) {
+    return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>UICanvas</title>
+        <style>
+            body, html { margin: 0; padding: 0; height: 100%; border: none; overflow: hidden; background: #1e1e1e; }
+            iframe { width: 100%; height: 100%; border: none; }
+            .loading { position: fixed; inset: 0; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font-size: 14px; background: #1e1e1e; gap: 12px; }
+            .spinner { width: 24px; height: 24px; border: 2px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+        </style>
+    </head>
+    <body>
+        <div id="loader" class="loading">
+            <div class="spinner"></div>
+            <span>Connecting to canvas server على port ${port}...</span>
+        </div>
+        <iframe id="canvas-frame" src="about:blank" onload="document.getElementById('loader').style.display='none'"></iframe>
+        <script>
+            // 重试机制：如果 iframe 因为连接被拒而加载白屏，定时触发强制刷新
+            let iframe = document.getElementById('canvas-frame');
+            function tryLoad() {
+                iframe.src = 'http://localhost:${port}';
+            }
+            setTimeout(tryLoad, 500);
+            
+            // 为了防止 localhost 拒绝连接后卡死，每 3 秒刷新一次 iframe 直到 Webview 的内容被接管（Webview 内会自己发起 WS）
+            // 我们通过检测同源策略：如果 iframe 成功加载，我们可以访问 iframe.contentWindow.location，如果没有成功加载（比如 error page），访问可能会报错或返回 origin 为 null。
+            // 简单处理：我们就不强行重试了，我们完全依赖 VSCode 的 HTML 更新机制。
+        </script>
+    </body>
+    </html>`;
+}
+
 function openPanel(context, preserveFocus = false) {
     // If panel already open, just reveal it
     if (panel) {
         try {
+            // 强制重新注入最新的 HTML（带最新端口），解决 Reload Window 后面板残留旧端口的 Bug
+            panel.webview.html = getWebviewHTML(activePort);
             panel.reveal(vscode.ViewColumn.Two, preserveFocus);
             return;
         } catch {
@@ -124,43 +169,7 @@ function openPanel(context, preserveFocus = false) {
         panel = null;
     });
 
-    panel.webview.html = `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>UICanvas</title>
-        <style>
-            body, html { margin: 0; padding: 0; height: 100%; border: none; overflow: hidden; background: #1e1e1e; }
-            iframe { width: 100%; height: 100%; border: none; }
-            .loading { position: fixed; inset: 0; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font-size: 14px; background: #1e1e1e; gap: 12px; }
-            .spinner { width: 24px; height: 24px; border: 2px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-    </head>
-    <body>
-        <div id="loader" class="loading">
-            <div class="spinner"></div>
-            <span>Connecting to canvas server...</span>
-        </div>
-        <iframe id="canvas-frame" src="about:blank" onload="document.getElementById('loader').style.display='none'"></iframe>
-        <script>
-            // Retry loading until server is ready
-            let attempts = 0;
-            function tryLoad() {
-                attempts++;
-                const frame = document.getElementById('canvas-frame');
-                frame.src = 'http://localhost:${activePort}';
-                frame.onerror = () => {
-                    if (attempts < 10) {
-                        setTimeout(tryLoad, 1500);
-                    }
-                };
-            }
-            setTimeout(tryLoad, 500);
-        </script>
-    </body>
-    </html>`;
+    panel.webview.html = getWebviewHTML(activePort);
 }
 
 function deactivate() {
