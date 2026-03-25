@@ -9,10 +9,12 @@ const net = require('net');
 let serverProcess = null;
 let panel = null;
 let activePort = 0;
-let activeWorkspacePath = ''; // 当前窗口的工作区路径
+
+// 全局端口文件 — stdio 进程从这里读取应连接的端口
+const PORT_FILE = path.join(os.tmpdir(), 'uicanvas.port');
 
 /**
- * 清理旧版本进程：只杀死来自更旧扩展目录的 uicanvas server.js 进程
+ * 清理旧版本进程
  */
 function cleanupStaleProcesses(currentExtPath) {
     try {
@@ -37,58 +39,15 @@ function findFreePort() {
 }
 
 /**
- * 路径规整函数 — 保证同一个物理路径在任何上下文中产生相同的 Key
- * 与 lib/workspace-registry.js 中的 getWorkspaceKey 完全一致
+ * 将当前窗口的端口写入全局端口文件
+ * 多窗口场景下，最后获得焦点的窗口胜出
  */
-function getWorkspaceKey(rawPath) {
+function writePortFile(port) {
     try {
-        return fs.realpathSync(rawPath).toLowerCase();
-    } catch {
-        return rawPath.toLowerCase();
-    }
-}
-
-/**
- * 注册表路径: ~/.uicanvas/registry.json
- */
-const REGISTRY_DIR  = path.join(os.homedir(), '.uicanvas');
-const REGISTRY_FILE = path.join(REGISTRY_DIR, 'registry.json');
-
-function readRegistry() {
-    try {
-        if (fs.existsSync(REGISTRY_FILE)) {
-            return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8'));
-        }
-    } catch { /* corrupt, start fresh */ }
-    return {};
-}
-
-function writeRegistry(data) {
-    try {
-        if (!fs.existsSync(REGISTRY_DIR)) {
-            fs.mkdirSync(REGISTRY_DIR, { recursive: true });
-        }
-        fs.writeFileSync(REGISTRY_FILE, JSON.stringify(data, null, 2));
+        fs.writeFileSync(PORT_FILE, String(port));
     } catch (err) {
-        console.error('[UICanvas Registry] Write failed:', err.message);
+        console.error('[UICanvas] Failed to write port file:', err.message);
     }
-}
-
-function registerPort(workspacePath, port) {
-    const key = getWorkspaceKey(workspacePath);
-    const registry = readRegistry();
-    registry[key] = { port, pid: process.pid, ts: Date.now() };
-    writeRegistry(registry);
-    console.log(`[UICanvas Registry] Registered: ${key} → port ${port}`);
-    return key;
-}
-
-function unregisterPort(workspacePath) {
-    const key = getWorkspaceKey(workspacePath);
-    const registry = readRegistry();
-    delete registry[key];
-    writeRegistry(registry);
-    console.log(`[UICanvas Registry] Unregistered: ${key}`);
 }
 
 
@@ -102,13 +61,7 @@ async function activate(context) {
     // ── 0. 清理旧版本残留进程 ──────────────────────
     cleanupStaleProcesses(context.extensionPath);
 
-    // ── 1. 确定当前窗口的工作区路径 ──────────────────
-    const wsFolders = vscode.workspace.workspaceFolders;
-    activeWorkspacePath = wsFolders && wsFolders.length > 0
-        ? wsFolders[0].uri.fsPath
-        : os.homedir(); // fallback: 无工作区时用 home 目录
-
-    // ── 2. 找到空闲端口并启动 HTTP 服务器 ────────────
+    // ── 1. 找到空闲端口并启动 HTTP 服务器 ────────────
     if (!serverProcess) {
         activePort = await findFreePort();
 
@@ -140,8 +93,17 @@ async function activate(context) {
         console.log(`[UICanvas] HTTP server starting on port ${activePort}`);
     }
 
-    // ── 3. 写入端口注册表（按工作区路径索引）────────
-    registerPort(activeWorkspacePath, activePort);
+    // ── 2. 写入端口文件（全局唯一）──────────────────
+    writePortFile(activePort);
+
+    // ── 3. 多窗口焦点切换时更新端口文件（活跃窗口胜出）
+    context.subscriptions.push(
+        vscode.window.onDidChangeWindowState((state) => {
+            if (state.focused && activePort) {
+                writePortFile(activePort);
+            }
+        })
+    );
 
     // ── 4. 注入 MCP 配置（纯净，不带 --port）─────────
     try {
@@ -157,17 +119,16 @@ async function activate(context) {
             };
 
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-            console.log('Successfully injected UICanvas into Antigravity MCP config (no --port, uses registry).');
+            console.log('Successfully injected UICanvas into Antigravity MCP config.');
         }
     } catch (err) {
         console.error('Failed to configure Antigravity MCP:', err);
     }
 
-    // ── 5. Register manual command (for re-opening) ────────
+    // ── 5. Register manual command ─────────────────────
     let disposable = vscode.commands.registerCommand('uicanvas.start', function () {
         openPanel(context);
     });
-
     context.subscriptions.push(disposable);
 }
 
@@ -242,10 +203,6 @@ function openPanel(context, preserveFocus = false) {
 // ═════════════════════════════════════════════════════════════
 
 function deactivate() {
-    // 注销注册表条目
-    if (activeWorkspacePath) {
-        unregisterPort(activeWorkspacePath);
-    }
     if (serverProcess) {
         serverProcess.kill();
         serverProcess = null;
