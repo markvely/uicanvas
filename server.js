@@ -86,23 +86,22 @@ app.get('/welcome', (_req, res) => res.sendFile(join(__dirname, 'public', 'welco
 
 const httpServer = createServer(app);
 
-// Catch port conflicts BEFORE .listen() triggers them
-httpServer.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    _log(`EADDRINUSE on port ${PORT}`);
-    if (isStdio) {
-      // Port occupied — connect as WS Client to forward commands
-      _log('Calling connectAsRemoteClient()');
-      connectAsRemoteClient();
-      return;
+if (isStdio) {
+  // ── Stdio 模式：永远不启动自己的 HTTP 服务器 ──
+  // 直接作为 WS Bridge 连接到扩展的 HTTP 服务器
+  _log('Stdio mode: skipping HTTP server, connecting as remote client');
+  connectAsRemoteClient();
+} else {
+  // ── HTTP 服务器模式（由扩展 spawn）──
+  httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n  ❌ Port ${PORT} is already in use. Is another UICanvas running?\n`);
+      process.exit(1);
     }
-    console.error(`\n  ❌ Port ${PORT} is already in use. Is another UICanvas running?\n`);
-    process.exit(1);
-  }
-  throw err;
-});
+    throw err;
+  });
 
-httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
   // Port bound successfully — create WebSocket server
   const wss = new WebSocketServer({ server: httpServer });
 
@@ -181,13 +180,16 @@ httpServer.listen(PORT, () => {
   if (!isStdio) {
     console.log(`\n  🎨 UICanvas running at http://localhost:${PORT}\n`);
   }
-});
+  });
+} // end of !isStdio block
 
 // ── stdio 远程桥接 ─────────────────────────────────────────
 
 function connectAsRemoteClient() {
-  const url = `ws://localhost:${PORT}/?role=stdio`;
-  _log(`Connecting to ${url}`);
+  // 每次连接/重连时重新读取端口文件，感知 Reload Window 导致的端口变化
+  const currentPort = readPortFile() || PORT;
+  const url = `ws://localhost:${currentPort}/?role=stdio`;
+  _log(`Connecting to ${url} (portFile=${readPortFile()})`);
   const ws = new WebSocket(url);
 
   ws.on('open', () => {
