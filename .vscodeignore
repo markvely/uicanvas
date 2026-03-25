@@ -1,9 +1,23 @@
+# 排除一切非软件本体的文件
 .git
+.gitignore
 .agents
 agent-skills
-.vscode
 *.vsix
 .DS_Store
+PUBLISHING.md
+SKILL.md
+
+# 排除 node_modules 中的无用文件
 node_modules/@types
 node_modules/typescript
-PUBLISHING.md
+node_modules/**/README.md
+node_modules/**/CHANGELOG.md
+node_modules/**/LICENSE
+node_modules/**/LICENSE.md
+node_modules/**/.gitkeep
+node_modules/**/*.d.ts
+node_modules/**/*.map
+
+# 排除 .gitkeep 占位文件
+**/.gitkeep
