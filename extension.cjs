@@ -1,6 +1,6 @@
 // extension.cjs
 const vscode = require('vscode');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -8,8 +8,28 @@ const os = require('os');
 let serverProcess = null;
 let panel = null;
 
+/**
+ * 清理旧版本进程：杀死所有残留的 server.js 进程 + 释放 3200 端口
+ * 在每次 activate() 时执行，确保新版本干净启动
+ */
+function cleanupStaleProcesses() {
+    try {
+        // 1. 杀死所有包含 "uicanvas" 路径的 server.js 进程
+        execSync('pkill -f "uicanvas.*server\\.js" 2>/dev/null || true', { stdio: 'ignore' });
+    } catch { /* ignore */ }
+    try {
+        // 2. 确保 3200 端口空闲
+        execSync('lsof -ti :3200 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+    } catch { /* ignore */ }
+    // 短暂等待进程退出
+    try { execSync('sleep 0.5', { stdio: 'ignore' }); } catch { /* ignore */ }
+}
+
 function activate(context) {
     console.log('UICanvas extension activated.');
+
+    // ── 0. 清理旧版本残留进程 ──────────────────────
+    cleanupStaleProcesses();
 
     // ── 1. Auto-inject MCP Configuration ───────────────────
     try {
