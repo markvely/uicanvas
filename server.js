@@ -16,6 +16,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3200;
 const isStdio = process.argv.includes('--stdio');
 
+// ── Diagnostic logging (写入文件，不污染 stdout/stderr) ────
+import { appendFileSync } from 'node:fs';
+const _logFile = '/tmp/uicanvas-stdio.log';
+function _log(msg) {
+  if (!isStdio) return;
+  try { appendFileSync(_logFile, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+}
+_log(`=== STDIO PROCESS START pid=${process.pid} argv=${JSON.stringify(process.argv)} cwd=${process.cwd()}`);
+
+// 全局异常捕获
+process.on('uncaughtException', (err) => { _log(`UNCAUGHT: ${err.stack}`); });
+process.on('unhandledRejection', (err) => { _log(`UNHANDLED_REJECT: ${err?.stack || err}`); });
+process.on('exit', (code) => { _log(`PROCESS EXIT code=${code}`); });
+process.on('SIGTERM', () => { _log('SIGTERM received'); });
+process.on('SIGINT', () => { _log('SIGINT received'); });
+
 // ── Shared state ───────────────────────────────────────────
 const bridge = new WSBridge();
 const artboards = new ArtboardManager();
@@ -40,8 +56,10 @@ const httpServer = createServer(app);
 // Catch port conflicts BEFORE .listen() triggers them
 httpServer.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
+    _log(`EADDRINUSE on port ${PORT}`);
     if (isStdio) {
       // Port occupied — connect as WS Client to forward commands
+      _log('Calling connectAsRemoteClient()');
       connectAsRemoteClient();
       return;
     }
@@ -136,13 +154,16 @@ httpServer.listen(PORT, () => {
 
 function connectAsRemoteClient() {
   const url = `ws://localhost:${PORT}/?role=stdio`;
+  _log(`Connecting to ${url}`);
   const ws = new WebSocket(url);
 
   ws.on('open', () => {
+    _log('Remote WS CONNECTED');
     bridge.setRemote(ws);
   });
 
-  ws.on('error', () => {
+  ws.on('error', (err) => {
+    _log(`Remote WS ERROR: ${err?.message}`);
     // 连接失败 — HTTP 服务器可能还没启动，稍后重试
     setTimeout(() => connectAsRemoteClient(), 1000);
   });
@@ -156,8 +177,10 @@ function connectAsRemoteClient() {
 
 // ── MCP Transport ──────────────────────────────────────────
 if (isStdio) {
+  _log('Starting StdioServerTransport...');
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
+  _log('MCP transport connected, stdio server is READY');
 } else {
   console.log('  ℹ  Run with --stdio to enable MCP transport\n');
 }
