@@ -118,8 +118,8 @@ httpServer.listen(PORT, () => {
               }
             }
 
-            // 如果没有活跃的 Webview 客户端（面板正在加载），进行等待重试（最多 10 秒）
-            if (!sent && attempts < 20) {
+            // 如果没有活跃的 Webview 客户端（面板正在加载），进行等待重试（最多 20 秒）
+            if (!sent && attempts < 40) {
               setTimeout(() => dispatch(attempts + 1), 500);
             } else if (!sent) {
               // 最终超时失败，回推 error 防止发送方无限等待

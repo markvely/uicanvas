@@ -61,8 +61,12 @@ function activate(context) {
         serverProcess.stdout.on('data', (data) => {
             const str = data.toString();
             console.log(`[UICanvas] ${str}`);
+            // 服务器就绪后自动打开面板（不抢焦点），确保 Webview 客户端提前连接
+            if (str.includes('UICanvas running at')) {
+                openPanel(context, true);
+            }
             if (str.includes('__UICANVAS_OPEN_PANEL__')) {
-                openPanel(context);
+                openPanel(context, false);
             }
         });
         serverProcess.stderr.on('data', (data) => console.error(`[UICanvas Error] ${data}`));
@@ -80,11 +84,11 @@ function activate(context) {
     context.subscriptions.push(disposable);
 }
 
-function openPanel(context) {
+function openPanel(context, preserveFocus = false) {
     // If panel already open, just reveal it
     if (panel) {
         try {
-            panel.reveal(vscode.ViewColumn.Two);
+            panel.reveal(vscode.ViewColumn.Two, preserveFocus);
             return;
         } catch {
             panel = null; // Panel was disposed
@@ -94,7 +98,7 @@ function openPanel(context) {
     panel = vscode.window.createWebviewPanel(
         'uiCanvas',
         '🎨 UICanvas',
-        vscode.ViewColumn.Two,
+        { viewColumn: vscode.ViewColumn.Two, preserveFocus },
         {
             enableScripts: true,
             retainContextWhenHidden: true,
