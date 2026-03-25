@@ -8,7 +8,8 @@ const net = require('net');
 
 let serverProcess = null;
 let panel = null;
-let activePort = 3200; // 当前窗口使用的端口
+let activePort = 0;
+let activeWorkspacePath = ''; // 当前窗口的工作区路径
 
 /**
  * 清理旧版本进程：只杀死来自更旧扩展目录的 uicanvas server.js 进程
@@ -35,16 +36,81 @@ function findFreePort() {
     });
 }
 
+/**
+ * 路径规整函数 — 保证同一个物理路径在任何上下文中产生相同的 Key
+ * 与 lib/workspace-registry.js 中的 getWorkspaceKey 完全一致
+ */
+function getWorkspaceKey(rawPath) {
+    try {
+        return fs.realpathSync(rawPath).toLowerCase();
+    } catch {
+        return rawPath.toLowerCase();
+    }
+}
+
+/**
+ * 注册表路径: ~/.uicanvas/registry.json
+ */
+const REGISTRY_DIR  = path.join(os.homedir(), '.uicanvas');
+const REGISTRY_FILE = path.join(REGISTRY_DIR, 'registry.json');
+
+function readRegistry() {
+    try {
+        if (fs.existsSync(REGISTRY_FILE)) {
+            return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf8'));
+        }
+    } catch { /* corrupt, start fresh */ }
+    return {};
+}
+
+function writeRegistry(data) {
+    try {
+        if (!fs.existsSync(REGISTRY_DIR)) {
+            fs.mkdirSync(REGISTRY_DIR, { recursive: true });
+        }
+        fs.writeFileSync(REGISTRY_FILE, JSON.stringify(data, null, 2));
+    } catch (err) {
+        console.error('[UICanvas Registry] Write failed:', err.message);
+    }
+}
+
+function registerPort(workspacePath, port) {
+    const key = getWorkspaceKey(workspacePath);
+    const registry = readRegistry();
+    registry[key] = { port, pid: process.pid, ts: Date.now() };
+    writeRegistry(registry);
+    console.log(`[UICanvas Registry] Registered: ${key} → port ${port}`);
+    return key;
+}
+
+function unregisterPort(workspacePath) {
+    const key = getWorkspaceKey(workspacePath);
+    const registry = readRegistry();
+    delete registry[key];
+    writeRegistry(registry);
+    console.log(`[UICanvas Registry] Unregistered: ${key}`);
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// Extension Lifecycle
+// ═════════════════════════════════════════════════════════════
+
 async function activate(context) {
     console.log('UICanvas extension activated.');
 
     // ── 0. 清理旧版本残留进程 ──────────────────────
     cleanupStaleProcesses(context.extensionPath);
 
-    // ── 1. 找到空闲端口并启动 HTTP 服务器 ────────────
+    // ── 1. 确定当前窗口的工作区路径 ──────────────────
+    const wsFolders = vscode.workspace.workspaceFolders;
+    activeWorkspacePath = wsFolders && wsFolders.length > 0
+        ? wsFolders[0].uri.fsPath
+        : os.homedir(); // fallback: 无工作区时用 home 目录
+
+    // ── 2. 找到空闲端口并启动 HTTP 服务器 ────────────
     if (!serverProcess) {
         activePort = await findFreePort();
-        const portFile = path.join(os.tmpdir(), 'uicanvas.port');
 
         const serverPath = path.join(context.extensionPath, 'server.js');
         serverProcess = spawn('node', [serverPath, '--port', String(activePort)], {
@@ -53,12 +119,11 @@ async function activate(context) {
             stdio: 'pipe',
         });
 
-        // 修复流读取问题，按行缓冲避免数据截断
         let outBuf = '';
         serverProcess.stdout.on('data', (data) => {
             outBuf += data.toString();
             const lines = outBuf.split('\n');
-            outBuf = lines.pop(); // 保留不完整的一行
+            outBuf = lines.pop();
             for (const line of lines) {
                 console.log(`[UICanvas] ${line}`);
                 if (line.includes('__UICANVAS_OPEN_PANEL__')) {
@@ -72,12 +137,13 @@ async function activate(context) {
             serverProcess = null;
         });
 
-        // 写入端口文件供 stdio 进程读取
-        try { fs.writeFileSync(portFile, String(activePort)); } catch {}
         console.log(`[UICanvas] HTTP server starting on port ${activePort}`);
     }
 
-    // ── 2. 注入 MCP 配置（带端口参数）────────────────
+    // ── 3. 写入端口注册表（按工作区路径索引）────────
+    registerPort(activeWorkspacePath, activePort);
+
+    // ── 4. 注入 MCP 配置（纯净，不带 --port）─────────
     try {
         const configPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
         if (fs.existsSync(configPath)) {
@@ -87,23 +153,28 @@ async function activate(context) {
             if (!config.mcpServers) config.mcpServers = {};
             config.mcpServers["uicanvas"] = {
                 "command": "node",
-                "args": [serverJsPath, "--stdio", "--port", String(activePort)]
+                "args": [serverJsPath, "--stdio"]
             };
 
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-            console.log(`Successfully injected UICanvas into Antigravity MCP config (port ${activePort})!`);
+            console.log('Successfully injected UICanvas into Antigravity MCP config (no --port, uses registry).');
         }
     } catch (err) {
         console.error('Failed to configure Antigravity MCP:', err);
     }
 
-    // ── 3. Register manual command (for re-opening) ────────
+    // ── 5. Register manual command (for re-opening) ────────
     let disposable = vscode.commands.registerCommand('uicanvas.start', function () {
         openPanel(context);
     });
 
     context.subscriptions.push(disposable);
 }
+
+
+// ═════════════════════════════════════════════════════════════
+// Webview Panel
+// ═════════════════════════════════════════════════════════════
 
 function getWebviewHTML(port) {
     return `<!DOCTYPE html>
@@ -123,35 +194,28 @@ function getWebviewHTML(port) {
     <body>
         <div id="loader" class="loading">
             <div class="spinner"></div>
-            <span>Connecting to canvas server على port ${port}...</span>
+            <span>Connecting to UICanvas...</span>
         </div>
         <iframe id="canvas-frame" src="about:blank" onload="document.getElementById('loader').style.display='none'"></iframe>
         <script>
-            // 重试机制：如果 iframe 因为连接被拒而加载白屏，定时触发强制刷新
             let iframe = document.getElementById('canvas-frame');
             function tryLoad() {
                 iframe.src = 'http://localhost:${port}';
             }
             setTimeout(tryLoad, 500);
-            
-            // 为了防止 localhost 拒绝连接后卡死，每 3 秒刷新一次 iframe 直到 Webview 的内容被接管（Webview 内会自己发起 WS）
-            // 我们通过检测同源策略：如果 iframe 成功加载，我们可以访问 iframe.contentWindow.location，如果没有成功加载（比如 error page），访问可能会报错或返回 origin 为 null。
-            // 简单处理：我们就不强行重试了，我们完全依赖 VSCode 的 HTML 更新机制。
         </script>
     </body>
     </html>`;
 }
 
 function openPanel(context, preserveFocus = false) {
-    // If panel already open, just reveal it
     if (panel) {
         try {
-            // 强制重新注入最新的 HTML（带最新端口），解决 Reload Window 后面板残留旧端口的 Bug
             panel.webview.html = getWebviewHTML(activePort);
             panel.reveal(vscode.ViewColumn.Two, preserveFocus);
             return;
         } catch {
-            panel = null; // Panel was disposed
+            panel = null;
         }
     }
 
@@ -172,7 +236,16 @@ function openPanel(context, preserveFocus = false) {
     panel.webview.html = getWebviewHTML(activePort);
 }
 
+
+// ═════════════════════════════════════════════════════════════
+// Deactivation
+// ═════════════════════════════════════════════════════════════
+
 function deactivate() {
+    // 注销注册表条目
+    if (activeWorkspacePath) {
+        unregisterPort(activeWorkspacePath);
+    }
     if (serverProcess) {
         serverProcess.kill();
         serverProcess = null;

@@ -15,7 +15,7 @@ import { registerTools } from './lib/mcp-tools.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isStdio = process.argv.includes('--stdio');
 
-// 读取 --port 参数（来自 extension.cjs 的动态端口分配）
+// 读取 --port 参数（HTTP 服务器模式下由 extension.cjs 传入）
 function getPortArg() {
   const idx = process.argv.indexOf('--port');
   if (idx !== -1 && process.argv[idx + 1]) {
@@ -23,7 +23,20 @@ function getPortArg() {
   }
   return null;
 }
-const PORT = getPortArg() || process.env.PORT || 3200;
+
+// ── 端口解析策略 ─────────────────────────────────────────
+// HTTP 服务器模式: 使用 --port 参数 (由 extension.cjs 传入)
+// Stdio 模式: 从 ~/.uicanvas/registry.json 按 CWD 查找对应端口
+import { lookupPort, getWorkspaceKey } from './lib/workspace-registry.js';
+
+let PORT;
+if (isStdio) {
+  // Stdio 进程查注册表确定应连接哪个窗口的 HTTP 服务器
+  const result = lookupPort(process.cwd());
+  PORT = result ? result.port : (getPortArg() || 3200);
+} else {
+  PORT = getPortArg() || process.env.PORT || 3200;
+}
 
 // ── Diagnostic logging (写入文件，不污染 stdout/stderr) ────
 import { appendFileSync } from 'node:fs';
@@ -32,7 +45,7 @@ function _log(msg) {
   if (!isStdio) return;
   try { appendFileSync(_logFile, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
 }
-_log(`=== STDIO PROCESS START pid=${process.pid} argv=${JSON.stringify(process.argv)} cwd=${process.cwd()}`);
+_log(`=== STDIO PROCESS START pid=${process.pid} argv=${JSON.stringify(process.argv)} cwd=${process.cwd()} PORT=${PORT}`);
 
 // 全局异常捕获
 process.on('uncaughtException', (err) => { _log(`UNCAUGHT: ${err.stack}`); });
