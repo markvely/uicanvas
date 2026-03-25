@@ -168,8 +168,16 @@ export class ArtboardRenderer {
    * @returns {{ createdNodes: Array }}
    */
   writeHTML({ targetNodeId, html, mode }) {
-    const target = this.world.querySelector(`[data-node-id="${targetNodeId}"]`);
+    let target = this.world.querySelector(`[data-node-id="${targetNodeId}"]`);
     if (!target) throw new Error(`Node not found: ${targetNodeId}`);
+
+    // 安全检查：如果目标是画板包装器或画板主体对象，自动重定向到内部的内容容器
+    if (target.classList.contains('artboard-wrapper') || target.classList.contains('artboard')) {
+      const content = target.classList.contains('artboard-wrapper')
+        ? target.querySelector('.artboard-content')
+        : target.parentElement.querySelector('.artboard-content');
+      if (content) target = content;
+    }
 
     const temp = document.createElement('div');
     temp.innerHTML = html;

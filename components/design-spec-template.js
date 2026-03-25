@@ -24,17 +24,11 @@ const DEFAULT_TOKENS = {
     mono: 'SF Mono, monospace',
   },
   fontSizes: {
-    'Display': '34px',
-    'Title 1': '28px',
-    'Title 2': '22px',
-    'Title 3': '20px',
-    'Headline': '17px',
-    'Body': '17px',
-    'Callout': '16px',
-    'Subhead': '15px',
-    'Footnote': '13px',
-    'Caption 1': '12px',
-    'Caption 2': '11px',
+    'Headline': '24px',
+    'Title': '20px',
+    'Body': '16px',
+    'Caption': '14px',
+    'Small': '12px',
   },
   spacing: [4, 8, 12, 16, 20, 24, 32, 40, 48, 64],
   radii: { sm: '4px', md: '8px', lg: '12px', xl: '16px', full: '9999px' },
@@ -96,7 +90,7 @@ export function generateSpecTemplate(projectName, customTokens = {}) {
   `).join('');
 
   return `
-<div layer-name="Design Spec" style="display:flex; flex-direction:column; gap:0; width:100%; height:100%; background:#000; padding:40px; overflow-y:auto; font-family:${t.fonts.body}; color:#fff;">
+<div layer-name="Design Spec" style="display:flex; flex-direction:column; gap:0; width:100%; height:auto; min-height:100%; background:#000; padding:40px; font-family:${t.fonts.body}; color:#fff; box-sizing: border-box;">
 
   <!-- Header -->
   <div layer-name="Spec Header" style="display:flex; flex-direction:column; gap:8px; padding-bottom:32px; border-bottom:1px solid rgba(255,255,255,0.1);">
