@@ -23,7 +23,7 @@ const project = new ProjectManager();
 
 // ── MCP Server (高层 API) ──────────────────────────────────
 const mcpServer = new McpServer(
-  { name: 'uicanvas', version: '1.1.7' },
+  { name: 'uicanvas', version: '1.1.10' },
   { capabilities: { tools: {} } }
 );
 registerTools(mcpServer, bridge, artboards, project);
@@ -32,6 +32,8 @@ registerTools(mcpServer, bridge, artboards, project);
 const app = express();
 app.use(express.static(join(__dirname, 'public')));
 app.use('/components', express.static(join(__dirname, 'components')));
+// Landing page available at /welcome
+app.get('/welcome', (_req, res) => res.sendFile(join(__dirname, 'public', 'welcome.html')));
 
 const httpServer = createServer(app);
 
