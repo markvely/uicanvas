@@ -9,27 +9,25 @@ let serverProcess = null;
 let panel = null;
 
 /**
- * 清理旧版本进程：杀死所有残留的 server.js 进程 + 释放 3200 端口
- * 在每次 activate() 时执行，确保新版本干净启动
+ * 清理旧版本进程：只杀死来自更旧扩展目录的 uicanvas server.js 进程
+ * 在每次 activate() 时执行，确保旧版本不残留
  */
-function cleanupStaleProcesses() {
+function cleanupStaleProcesses(currentExtPath) {
     try {
-        // 1. 杀死所有包含 "uicanvas" 路径的 server.js 进程
-        execSync('pkill -f "uicanvas.*server\\.js" 2>/dev/null || true', { stdio: 'ignore' });
+        const extPath = currentExtPath || '';
+        if (!extPath) return;
+        // 查找所有包含 "uicanvas-" 且包含 "node" 的进程，排除当前版本的路径，然后杀掉
+        // 使用 grep -Fv 排除当前路径，保护当前版本（包括其他窗口中运行的当前版本）的进程
+        const cmd = `ps aux | grep "[n]ode.*uicanvas-" | grep -Fv "${extPath}" | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
+        execSync(cmd, { stdio: 'ignore' });
     } catch { /* ignore */ }
-    try {
-        // 2. 确保 3200 端口空闲
-        execSync('lsof -ti :3200 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
-    } catch { /* ignore */ }
-    // 短暂等待进程退出
-    try { execSync('sleep 0.5', { stdio: 'ignore' }); } catch { /* ignore */ }
 }
 
 function activate(context) {
     console.log('UICanvas extension activated.');
 
     // ── 0. 清理旧版本残留进程 ──────────────────────
-    cleanupStaleProcesses();
+    cleanupStaleProcesses(context.extensionPath);
 
     // ── 1. Auto-inject MCP Configuration ───────────────────
     try {
