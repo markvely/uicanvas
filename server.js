@@ -13,8 +13,17 @@ import { ProjectManager } from './lib/project-manager.js';
 import { registerTools } from './lib/mcp-tools.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = process.env.PORT || 3200;
 const isStdio = process.argv.includes('--stdio');
+
+// 读取 --port 参数（来自 extension.cjs 的动态端口分配）
+function getPortArg() {
+  const idx = process.argv.indexOf('--port');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    return parseInt(process.argv[idx + 1], 10);
+  }
+  return null;
+}
+const PORT = getPortArg() || process.env.PORT || 3200;
 
 // ── Diagnostic logging (写入文件，不污染 stdout/stderr) ────
 import { appendFileSync } from 'node:fs';

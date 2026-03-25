@@ -224,76 +224,8 @@
     // 暴露到全局 (调试/测试用)
     window.dc = { canvas, renderer, wsClient, history };
 
-    // ── Demo: Hello World App ──
-    setTimeout(() => {
-      // 创建 iPhone 画板
-      renderer.create({
-        id: 'hw-app', name: 'Hello World App',
-        project: 'UICanvas', page: 'Hello World', state: 'Default',
-        width: 390, height: 844, left: 0, top: 0,
-        styles: { backgroundColor: '#000', borderRadius: '40px' }
-      });
-
-      // 状态栏
-      renderer.writeHTML({
-        targetNodeId: 'hw-app-content', mode: 'insert-children',
-        html: `<div layer-name="Status Bar" style="display:flex; justify-content:space-between; align-items:center; padding:14px 24px 0; color:#fff; font:600 14px/18px system-ui;">
-          <span>9:41</span>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <svg width="16" height="12" viewBox="0 0 16 12"><path d="M1 8h2v4H1zM5 5h2v7H5zM9 2h2v10H9zM13 0h2v12h-2z" fill="#fff"/></svg>
-            <svg width="15" height="11" viewBox="0 0 15 11"><path d="M7.5 3.5a6 6 0 014.2 1.7l1.1-1.1A7.5 7.5 0 007.5 1.5 7.5 7.5 0 002.2 3.6L3.3 5.2A6 6 0 017.5 3.5z" fill="#fff"/><path d="M7.5 6.5a3.5 3.5 0 012.5 1l1.1-1.1a5 5 0 00-7.2 0L5 7.5a3.5 3.5 0 012.5-1z" fill="#fff"/><circle cx="7.5" cy="9.5" r="1.5" fill="#fff"/></svg>
-            <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0" y="1" width="21" height="10" rx="2" stroke="#fff" stroke-width="1" fill="none"/><rect x="1.5" y="2.5" width="16" height="7" rx="1" fill="#30D158"/><rect x="22" y="4" width="2" height="4" rx="1" fill="#fff"/></svg>
-          </div>
-        </div>`
-      });
-
-      // 主内容
-      renderer.writeHTML({
-        targetNodeId: 'hw-app-content', mode: 'insert-children',
-        html: `<div layer-name="Main Content" style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; padding:0 32px; gap:24px;">
-          <div style="width:120px; height:120px; border-radius:28px; background:linear-gradient(135deg, #5E5CE6, #BF5AF2); display:flex; align-items:center; justify-content:center; box-shadow: 0 8px 32px rgba(94,92,230,0.4);">
-            <svg width="56" height="56" viewBox="0 0 56 56" fill="none"><path d="M28 8l5.5 11 12.5 2-9 9 2 12.5L28 37l-11 5.5 2-12.5-9-9 12.5-2z" fill="#fff" opacity="0.9"/></svg>
-          </div>
-          <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-            <span style="font:700 34px/41px system-ui; color:#fff; letter-spacing:-0.5px;">Hello, World!</span>
-            <span style="font:400 17px/22px system-ui; color:#8E8E93;">Welcome to DesignCanvas</span>
-          </div>
-          <div style="display:flex; gap:12px; margin-top:16px;">
-            <div style="padding:14px 32px; background:#5E5CE6; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Get Started</div>
-            <div style="padding:14px 32px; background:#2C2C2E; border-radius:14px; font:600 17px/22px system-ui; color:#fff;">Learn More</div>
-          </div>
-        </div>`
-      });
-
-      // Home Indicator
-      renderer.writeHTML({
-        targetNodeId: 'hw-app-content', mode: 'insert-children',
-        html: `<div layer-name="Home Indicator" style="display:flex; justify-content:center; padding:8px 0 12px;">
-          <div style="width:134px; height:5px; background:rgba(255,255,255,0.3); border-radius:3px;"></div>
-        </div>`
-      });
-
-      // ═══════════════════════════════════════════
-      // Design Spec 画板 (复用 generateSpecTemplate)
-      // ═══════════════════════════════════════════
-      renderer.create({
-        id: 'ds-spec', name: 'Design System — Spec Sheet',
-        width: 680, height: 1400, left: 470, top: 0,
-        styles: { backgroundColor: '#000', borderRadius: '12px' }
-      });
-
-      renderer.writeHTML({
-        targetNodeId: 'ds-spec-content', mode: 'insert-children',
-        html: generateSpecTemplate('UICanvas'),
-      });
-
-      // 组件库 Gallery
-      renderComponentGallery(renderer);
-
-      // 适应画面
-      canvas.fitToScreen();
-      console.log('🚀 Demo + Gallery created');
-    }, 200);
+    // 画布就绪，等待 MCP 指令
+    console.log('🎨 Canvas ready — waiting for commands');
 
     console.log('🎨 DesignCanvas ready');
   </script>

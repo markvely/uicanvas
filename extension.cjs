@@ -4,64 +4,58 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const net = require('net');
 
 let serverProcess = null;
 let panel = null;
+let activePort = 3200; // 当前窗口使用的端口
 
 /**
  * 清理旧版本进程：只杀死来自更旧扩展目录的 uicanvas server.js 进程
- * 在每次 activate() 时执行，确保旧版本不残留
  */
 function cleanupStaleProcesses(currentExtPath) {
     try {
         const extPath = currentExtPath || '';
         if (!extPath) return;
-        // 查找所有包含 "uicanvas-" 且包含 "node" 的进程，排除当前版本的路径，然后杀掉
-        // 使用 grep -Fv 排除当前路径，保护当前版本（包括其他窗口中运行的当前版本）的进程
         const cmd = `ps aux | grep "[n]ode.*uicanvas-" | grep -Fv "${extPath}" | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
         execSync(cmd, { stdio: 'ignore' });
     } catch { /* ignore */ }
 }
 
-function activate(context) {
+/**
+ * 找到一个空闲端口
+ */
+function findFreePort() {
+    return new Promise((resolve) => {
+        const srv = net.createServer();
+        srv.listen(0, () => {
+            const port = srv.address().port;
+            srv.close(() => resolve(port));
+        });
+    });
+}
+
+async function activate(context) {
     console.log('UICanvas extension activated.');
 
     // ── 0. 清理旧版本残留进程 ──────────────────────
     cleanupStaleProcesses(context.extensionPath);
 
-    // ── 1. Auto-inject MCP Configuration ───────────────────
-    try {
-        const configPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            const serverJsPath = path.join(context.extensionPath, 'server.js');
-            
-            if (!config.mcpServers) config.mcpServers = {};
-            config.mcpServers["uicanvas"] = {
-                "command": "node",
-                "args": [serverJsPath, "--stdio"]
-            };
-            
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-            console.log('Successfully injected UICanvas into Antigravity MCP config!');
-        }
-    } catch (err) {
-        console.error('Failed to configure Antigravity MCP:', err);
-    }
-
-    // ── 2. Auto-spawn HTTP server on activation ────────────
+    // ── 1. 找到空闲端口并启动 HTTP 服务器 ────────────
     if (!serverProcess) {
+        activePort = await findFreePort();
+        const portFile = path.join(os.tmpdir(), 'uicanvas.port');
+
         const serverPath = path.join(context.extensionPath, 'server.js');
-        serverProcess = spawn('node', [serverPath], {
+        serverProcess = spawn('node', [serverPath, '--port', String(activePort)], {
             cwd: context.extensionPath,
             env: process.env,
             stdio: 'pipe',
         });
-        
+
         serverProcess.stdout.on('data', (data) => {
             const str = data.toString();
             console.log(`[UICanvas] ${str}`);
-            // 仅在收到 MCP 命令触发信号时才打开面板（不主动弹出）
             if (str.includes('__UICANVAS_OPEN_PANEL__')) {
                 openPanel(context, false);
             }
@@ -71,6 +65,30 @@ function activate(context) {
             console.log(`[UICanvas] HTTP server exited with code ${code}`);
             serverProcess = null;
         });
+
+        // 写入端口文件供 stdio 进程读取
+        try { fs.writeFileSync(portFile, String(activePort)); } catch {}
+        console.log(`[UICanvas] HTTP server starting on port ${activePort}`);
+    }
+
+    // ── 2. 注入 MCP 配置（带端口参数）────────────────
+    try {
+        const configPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const serverJsPath = path.join(context.extensionPath, 'server.js');
+
+            if (!config.mcpServers) config.mcpServers = {};
+            config.mcpServers["uicanvas"] = {
+                "command": "node",
+                "args": [serverJsPath, "--stdio", "--port", String(activePort)]
+            };
+
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+            console.log(`Successfully injected UICanvas into Antigravity MCP config (port ${activePort})!`);
+        }
+    } catch (err) {
+        console.error('Failed to configure Antigravity MCP:', err);
     }
 
     // ── 3. Register manual command (for re-opening) ────────
@@ -132,7 +150,7 @@ function openPanel(context, preserveFocus = false) {
             function tryLoad() {
                 attempts++;
                 const frame = document.getElementById('canvas-frame');
-                frame.src = 'http://localhost:3200';
+                frame.src = 'http://localhost:${activePort}';
                 frame.onerror = () => {
                     if (attempts < 10) {
                         setTimeout(tryLoad, 1500);
