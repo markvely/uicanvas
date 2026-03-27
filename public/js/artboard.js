@@ -425,6 +425,64 @@ export class ArtboardRenderer {
     };
   }
 
+  /** 序列化所有画板为可持久化的数据 */
+  serialize() {
+    const artboards = [];
+    for (const [id, el] of this.artboardEls) {
+      const meta = el._meta || {};
+      const content = el.querySelector('.artboard-content');
+      const body = el.querySelector('.artboard');
+      artboards.push({
+        id,
+        name: meta.name || '',
+        width: meta.width || el.offsetWidth,
+        height: body ? body.offsetHeight : (meta.height || el.offsetHeight),
+        left: parseFloat(el.style.left) || 0,
+        top: parseFloat(el.style.top) || 0,
+        project: meta.project || '',
+        page: meta.page || '',
+        state: meta.state || '',
+        html: content ? content.innerHTML : '',
+      });
+    }
+    return { version: 1, artboards };
+  }
+
+  /** 从保存的数据恢复画布 */
+  loadFromData(data) {
+    // 清除现有画板
+    for (const [id, el] of this.artboardEls) {
+      el.remove();
+    }
+    this.artboardEls.clear();
+    this.selectedId = null;
+
+    if (!data || !data.artboards) return;
+
+    for (const ab of data.artboards) {
+      const meta = {
+        id: ab.id,
+        name: ab.name,
+        width: ab.width,
+        height: ab.height,
+        left: ab.left || 0,
+        top: ab.top || 0,
+        project: ab.project,
+        page: ab.page,
+        state: ab.state,
+      };
+      this.create(meta);
+      // 恢复 HTML 内容
+      if (ab.html) {
+        const content = this.world.querySelector(`[data-node-id="${ab.id}-content"]`);
+        if (content) {
+          content.innerHTML = ab.html;
+          this._assignNodeIds(content);
+        }
+      }
+    }
+  }
+
   _escapeHtml(text) {
     const d = document.createElement('div');
     d.textContent = text;

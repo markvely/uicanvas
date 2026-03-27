@@ -84,6 +84,38 @@ app.use('/components', express.static(join(__dirname, 'components')));
 // Landing page available at /welcome
 app.get('/welcome', (_req, res) => res.sendFile(join(__dirname, 'public', 'welcome.html')));
 
+// ── Save/Load endpoints (extension <-> frontend via HTTP server) ──
+app.use(express.json({ limit: '50mb' }));
+
+app.post('/__save__', (_req, res) => {
+  // 广播保存请求到前端 Webview，前端序列化后通过 WS 返回
+  for (const client of bridge.clients) {
+    if (client.readyState === 1 && !client.isRemoteStdio) {
+      client.send(JSON.stringify({ type: '__request_save__' }));
+    }
+  }
+  res.json({ ok: true });
+});
+
+app.post('/__load__', (req, res) => {
+  const data = req.body;
+  // 广播加载命令到前端 Webview
+  for (const client of bridge.clients) {
+    if (client.readyState === 1 && !client.isRemoteStdio) {
+      client.send(JSON.stringify({ type: 'load_canvas', data }));
+    }
+  }
+  res.json({ ok: true });
+});
+
+// ── 接收前端保存的数据并输出到 stdout（extension 捕获）──
+function handleSaveData(data) {
+  if (!isStdio) {
+    // HTTP server 模式：输出到 stdout 让 extension 捕获
+    console.log('__UICANVAS_SAVE__' + JSON.stringify(data));
+  }
+}
+
 const httpServer = createServer(app);
 
 if (isStdio) {
@@ -114,6 +146,18 @@ if (isStdio) {
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
+
+        // 处理前端保存数据
+        if (msg.type === '__save_data__') {
+          handleSaveData(msg.data);
+          return;
+        }
+        // 处理 dirty 状态通知
+        if (msg.type === '__dirty__') {
+          if (!isStdio) console.log('__UICANVAS_DIRTY__');
+          return;
+        }
+
         // 如果消息包含 type 字段（是 MCP 命令转发），re-broadcast 给其他客户端
         if (msg.type && !msg.requestId) {
           // 这是广播消息，转发给其他客户端

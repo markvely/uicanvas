@@ -33,6 +33,58 @@
       {
         "command": "uicanvas.start",
         "title": "UICanvas: Open Artboard"
+      },
+      {
+        "command": "uicanvas.newFile",
+        "title": "UICanvas: New Design File",
+        "icon": "$(add)"
+      },
+      {
+        "command": "uicanvas.refresh",
+        "title": "UICanvas: Refresh File List",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "uicanvas-explorer",
+          "title": "UICanvas",
+          "icon": "media/icon-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "uicanvas-explorer": [
+        {
+          "id": "uicanvas.files",
+          "name": "Design Files",
+          "contextualTitle": "UICanvas"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "uicanvas.newFile",
+          "when": "view == uicanvas.files",
+          "group": "navigation"
+        },
+        {
+          "command": "uicanvas.refresh",
+          "when": "view == uicanvas.files",
+          "group": "navigation"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "uicanvas.editor",
+        "displayName": "UICanvas Editor",
+        "selector": [
+          { "filenamePattern": "*.uicanvas" }
+        ],
+        "priority": "default"
       }
     ]
   },

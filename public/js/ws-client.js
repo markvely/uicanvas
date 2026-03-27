@@ -87,14 +87,31 @@ export class WSClient {
       case '__open_canvas__':
         return { connected: true, timestamp: Date.now() };
 
+      case '__request_save__': {
+        // 前端序列化并发回给 server
+        const saveData = this.renderer.serialize();
+        this.ws.send(JSON.stringify({ type: '__save_data__', data: saveData }));
+        return { saved: true };
+      }
+
+      case 'load_canvas': {
+        const data = params.data || params;
+        this.renderer.loadFromData(data);
+        return { loaded: true, artboardCount: data.artboards?.length || 0 };
+      }
+
       case 'get_basic_info':
         return this.renderer.getBasicInfo();
 
-      case 'create_artboard':
-        return this.renderer.create(params);
+      case 'create_artboard': {
+        const result = this.renderer.create(params);
+        this._notifyDirty();
+        return result;
+      }
 
       case 'write_html':
         this._saveSnapshot(params.targetNodeId, 'write_html');
+        this._notifyDirty();
         return this.renderer.writeHTML(params);
 
       case 'get_children':
@@ -122,30 +139,53 @@ export class WSClient {
         return this.renderer.getNodeInfo(params.nodeId);
 
       case 'delete_nodes':
-        // 保存所有受影响画板的快照
         for (const id of params.nodeIds) { this._saveSnapshot(id, 'delete_nodes'); }
         this.renderer.deleteNodes(params.nodeIds);
+        this._notifyDirty();
         return { deleted: params.nodeIds.length };
 
       case 'update_styles':
-        // 保存受影响节点的画板快照
         for (const u of params.updates) { if (u.nodeIds[0]) this._saveSnapshot(u.nodeIds[0], 'update_styles'); }
         this.renderer.updateStyles(params.updates);
+        this._notifyDirty();
         return { updated: true };
 
       case 'set_text':
         for (const u of params.updates) { this._saveSnapshot(u.nodeId, 'set_text'); }
         this.renderer.setText(params.updates);
+        this._notifyDirty();
         return { updated: true };
 
       case 'get_screenshot':
         return await this.renderer.getScreenshot(params.nodeId, params.scale);
 
-      case 'duplicate_nodes':
-        return this.renderer.duplicateNodes(params.nodeIds);
+      case 'duplicate_nodes': {
+        const duped = this.renderer.duplicateNodes(params.nodeIds);
+        this._notifyDirty();
+        return duped;
+      }
 
       default:
         throw new Error(`Unknown command: ${type}`);
     }
+  }
+
+  /** 通知 dirty 状态变化并触发自动保存 */
+  _notifyDirty() {
+    if (this.ws && this.ws.readyState === 1) {
+      this.ws.send(JSON.stringify({ type: '__dirty__' }));
+    }
+    this._triggerAutoSave();
+  }
+
+  /** 触发自动保存（延迟 2 秒去抖） */
+  _triggerAutoSave() {
+    clearTimeout(this._autoSaveTimer);
+    this._autoSaveTimer = setTimeout(() => {
+      const saveData = this.renderer.serialize();
+      if (this.ws && this.ws.readyState === 1) {
+        this.ws.send(JSON.stringify({ type: '__save_data__', data: saveData }));
+      }
+    }, 2000);
   }
 }

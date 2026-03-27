@@ -9,13 +9,16 @@ const net = require('net');
 let serverProcess = null;
 let panel = null;
 let activePort = 0;
+let isDirty = false;
+let currentFilePath = null;
 
-// 全局端口文件 — stdio 进程从这里读取应连接的端口
 const PORT_FILE = path.join(os.tmpdir(), 'uicanvas.port');
+const UICANVAS_DIR = 'UICanvas';
 
-/**
- * 清理旧版本进程
- */
+// ═════════════════════════════════════════════════════════════
+// Utilities
+// ═════════════════════════════════════════════════════════════
+
 function cleanupStaleProcesses(currentExtPath) {
     try {
         const extPath = currentExtPath || '';
@@ -25,9 +28,6 @@ function cleanupStaleProcesses(currentExtPath) {
     } catch { /* ignore */ }
 }
 
-/**
- * 找到一个空闲端口
- */
 function findFreePort() {
     return new Promise((resolve) => {
         const srv = net.createServer();
@@ -38,17 +38,100 @@ function findFreePort() {
     });
 }
 
-/**
- * 将当前窗口的端口写入全局端口文件
- * 多窗口场景下，最后获得焦点的窗口胜出
- */
 function writePortFile(port) {
-    try {
-        fs.writeFileSync(PORT_FILE, String(port));
-    } catch (err) {
-        console.error('[UICanvas] Failed to write port file:', err.message);
+    try { fs.writeFileSync(PORT_FILE, String(port)); } catch {}
+}
+
+/** 确保 UICanvas 目录存在于工作区 */
+function ensureUICanvasDir() {
+    const ws = vscode.workspace.workspaceFolders?.[0];
+    if (!ws) return null;
+    const dirPath = path.join(ws.uri.fsPath, UICANVAS_DIR);
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+    return dirPath;
+}
+
+/** 获取 UICanvas 目录中的所有 .uicanvas 文件 */
+function getUICanvasFiles() {
+    const ws = vscode.workspace.workspaceFolders?.[0];
+    if (!ws) return [];
+    const dirPath = path.join(ws.uri.fsPath, UICANVAS_DIR);
+    if (!fs.existsSync(dirPath)) return [];
+    return fs.readdirSync(dirPath)
+        .filter(f => f.endsWith('.uicanvas'))
+        .map(f => ({
+            name: f.replace('.uicanvas', ''),
+            path: path.join(dirPath, f),
+        }));
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// Sidebar Tree Data Provider
+// ═════════════════════════════════════════════════════════════
+
+class UICanvasTreeProvider {
+    constructor() {
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+    }
+
+    refresh() {
+        this._onDidChangeTreeData.fire();
+    }
+
+    getTreeItem(element) {
+        return element;
+    }
+
+    getChildren() {
+        const files = getUICanvasFiles();
+        if (files.length === 0) {
+            const item = new vscode.TreeItem('No design files yet');
+            item.description = 'Use AI to create a design';
+            return [item];
+        }
+        return files.map(f => {
+            const item = new vscode.TreeItem(f.name, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('file-media');
+            item.description = '.uicanvas';
+            item.command = {
+                command: 'uicanvas.openFile',
+                title: 'Open Design',
+                arguments: [f.path],
+            };
+            item.contextValue = 'uicanvasFile';
+            const stat = fs.statSync(f.path);
+            item.tooltip = `Last modified: ${stat.mtime.toLocaleString()}`;
+            return item;
+        });
     }
 }
+
+
+// ═════════════════════════════════════════════════════════════
+// Custom Editor Provider
+// ═════════════════════════════════════════════════════════════
+
+class UICanvasEditorProvider {
+    constructor(context) {
+        this.context = context;
+    }
+
+    async resolveCustomTextEditor(document, webviewPanel) {
+        webviewPanel.webview.options = { enableScripts: true };
+        webviewPanel.webview.html = getWebviewHTML(activePort);
+
+        // 等面板加载后，发送文件内容
+        setTimeout(() => {
+            loadFileIntoPanel(document.uri.fsPath);
+        }, 2000);
+    }
+}
+
+UICanvasEditorProvider.viewType = 'uicanvas.editor';
 
 
 // ═════════════════════════════════════════════════════════════
@@ -57,14 +140,11 @@ function writePortFile(port) {
 
 async function activate(context) {
     console.log('UICanvas extension activated.');
-
-    // ── 0. 清理旧版本残留进程 ──────────────────────
     cleanupStaleProcesses(context.extensionPath);
 
-    // ── 1. 找到空闲端口并启动 HTTP 服务器 ────────────
+    // ── 1. 启动 HTTP 服务器 ──────────────────────────
     if (!serverProcess) {
         activePort = await findFreePort();
-
         const serverPath = path.join(context.extensionPath, 'server.js');
         serverProcess = spawn('node', [serverPath, '--port', String(activePort)], {
             cwd: context.extensionPath,
@@ -82,6 +162,15 @@ async function activate(context) {
                 if (line.includes('__UICANVAS_OPEN_PANEL__')) {
                     openPanel(context, false);
                 }
+                // 处理来自前端的保存请求
+                if (line.startsWith('__UICANVAS_SAVE__')) {
+                    const jsonStr = line.replace('__UICANVAS_SAVE__', '');
+                    handleSaveFromFrontend(jsonStr);
+                }
+                // 处理 dirty 状态变化
+                if (line === '__UICANVAS_DIRTY__') {
+                    setDirty(true);
+                }
             }
         });
         serverProcess.stderr.on('data', (data) => console.error(`[UICanvas Error] ${data}`));
@@ -93,43 +182,178 @@ async function activate(context) {
         console.log(`[UICanvas] HTTP server starting on port ${activePort}`);
     }
 
-    // ── 2. 写入端口文件（全局唯一）──────────────────
+    // ── 2. 端口文件 ──────────────────────────────────
     writePortFile(activePort);
-
-    // ── 3. 多窗口焦点切换时更新端口文件（活跃窗口胜出）
     context.subscriptions.push(
         vscode.window.onDidChangeWindowState((state) => {
-            if (state.focused && activePort) {
-                writePortFile(activePort);
-            }
+            if (state.focused && activePort) writePortFile(activePort);
         })
     );
 
-    // ── 4. 注入 MCP 配置（纯净，不带 --port）─────────
+    // ── 3. MCP 配置注入 ─────────────────────────────
     try {
         const configPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
         if (fs.existsSync(configPath)) {
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
             const serverJsPath = path.join(context.extensionPath, 'server.js');
-
             if (!config.mcpServers) config.mcpServers = {};
             config.mcpServers["uicanvas"] = {
                 "command": "node",
                 "args": [serverJsPath, "--stdio"]
             };
-
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-            console.log('Successfully injected UICanvas into Antigravity MCP config.');
         }
     } catch (err) {
         console.error('Failed to configure Antigravity MCP:', err);
     }
 
-    // ── 5. Register manual command ─────────────────────
-    let disposable = vscode.commands.registerCommand('uicanvas.start', function () {
-        openPanel(context);
+    // ── 4. Sidebar Tree View ────────────────────────
+    const treeProvider = new UICanvasTreeProvider();
+    vscode.window.registerTreeDataProvider('uicanvas.files', treeProvider);
+
+    // 监听 UICanvas 目录变化
+    const ws = vscode.workspace.workspaceFolders?.[0];
+    if (ws) {
+        const dirPath = path.join(ws.uri.fsPath, UICANVAS_DIR);
+        if (fs.existsSync(dirPath)) {
+            const watcher = vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(dirPath, '*.uicanvas')
+            );
+            watcher.onDidCreate(() => treeProvider.refresh());
+            watcher.onDidDelete(() => treeProvider.refresh());
+            watcher.onDidChange(() => treeProvider.refresh());
+            context.subscriptions.push(watcher);
+        }
+    }
+
+    // ── 5. Custom Editor Provider ───────────────────
+    context.subscriptions.push(
+        vscode.window.registerCustomEditorProvider(
+            UICanvasEditorProvider.viewType,
+            new UICanvasEditorProvider(context),
+            { webviewOptions: { retainContextWhenHidden: true } }
+        )
+    );
+
+    // ── 6. Commands ─────────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand('uicanvas.start', () => openPanel(context)),
+        vscode.commands.registerCommand('uicanvas.newFile', async () => {
+            const name = await vscode.window.showInputBox({
+                prompt: 'Design file name',
+                placeHolder: 'e.g. Timer App',
+                validateInput: (v) => v.trim() ? null : 'Name is required',
+            });
+            if (!name) return;
+            const dir = ensureUICanvasDir();
+            if (!dir) {
+                vscode.window.showErrorMessage('No workspace folder open.');
+                return;
+            }
+            const filePath = path.join(dir, `${name}.uicanvas`);
+            const emptyDoc = {
+                version: 1,
+                projectName: name,
+                designTokens: {},
+                artboards: [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+            fs.writeFileSync(filePath, JSON.stringify(emptyDoc, null, 2));
+            treeProvider.refresh();
+            // 打开该文件
+            vscode.commands.executeCommand('uicanvas.openFile', filePath);
+        }),
+        vscode.commands.registerCommand('uicanvas.refresh', () => treeProvider.refresh()),
+        vscode.commands.registerCommand('uicanvas.openFile', (filePath) => {
+            currentFilePath = filePath;
+            openPanel(context, false);
+            // 延迟加载文件内容到面板
+            setTimeout(() => loadFileIntoPanel(filePath), 1500);
+        }),
+        vscode.commands.registerCommand('uicanvas.save', () => {
+            requestSaveFromFrontend();
+        }),
+    );
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// Save / Load
+// ═════════════════════════════════════════════════════════════
+
+/** 请求前端序列化当前画布状态 */
+function requestSaveFromFrontend() {
+    if (!serverProcess) return;
+    // 通过 HTTP server 的 stdin 发送保存请求
+    // 实际上我们通过 stdout 信号（前端→HTTP server stdout→extension）
+    // 这里用不同的方式：直接向 HTTP server 发 HTTP 请求
+    const http = require('http');
+    const req = http.request({
+        hostname: 'localhost',
+        port: activePort,
+        path: '/__save__',
+        method: 'POST',
     });
-    context.subscriptions.push(disposable);
+    req.end();
+}
+
+/** 处理来自前端的保存数据 */
+function handleSaveFromFrontend(jsonStr) {
+    try {
+        const data = JSON.parse(jsonStr);
+        if (!currentFilePath) {
+            // 没有文件路径，询问保存位置
+            const dir = ensureUICanvasDir();
+            if (!dir) return;
+            const name = data.projectName || 'Untitled';
+            currentFilePath = path.join(dir, `${name}.uicanvas`);
+        }
+        data.updatedAt = new Date().toISOString();
+        if (!data.createdAt) data.createdAt = data.updatedAt;
+        fs.writeFileSync(currentFilePath, JSON.stringify(data, null, 2));
+        setDirty(false);
+        console.log(`[UICanvas] Saved to ${currentFilePath}`);
+    } catch (err) {
+        console.error('[UICanvas] Save failed:', err);
+    }
+}
+
+/** 加载文件内容到面板的画布中 */
+function loadFileIntoPanel(filePath) {
+    if (!filePath || !fs.existsSync(filePath)) return;
+    try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const data = JSON.parse(content);
+        // 通过 HTTP 请求发送加载命令
+        const http = require('http');
+        const postData = JSON.stringify(data);
+        const req = http.request({
+            hostname: 'localhost',
+            port: activePort,
+            path: '/__load__',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
+        });
+        req.write(postData);
+        req.end();
+        currentFilePath = filePath;
+    } catch (err) {
+        console.error('[UICanvas] Load failed:', err);
+    }
+}
+
+
+// ═════════════════════════════════════════════════════════════
+// Dirty State
+// ═════════════════════════════════════════════════════════════
+
+function setDirty(dirty) {
+    isDirty = dirty;
+    if (panel) {
+        const base = '🎨 UICanvas';
+        panel.title = dirty ? `${base} ●` : base;
+    }
 }
 
 
@@ -160,9 +384,7 @@ function getWebviewHTML(port) {
         <iframe id="canvas-frame" src="about:blank" onload="document.getElementById('loader').style.display='none'"></iframe>
         <script>
             let iframe = document.getElementById('canvas-frame');
-            function tryLoad() {
-                iframe.src = 'http://localhost:${port}';
-            }
+            function tryLoad() { iframe.src = 'http://localhost:${port}'; }
             setTimeout(tryLoad, 500);
         </script>
     </body>
@@ -175,22 +397,20 @@ function openPanel(context, preserveFocus = false) {
             panel.webview.html = getWebviewHTML(activePort);
             panel.reveal(vscode.ViewColumn.Two, preserveFocus);
             return;
-        } catch {
-            panel = null;
-        }
+        } catch { panel = null; }
     }
 
     panel = vscode.window.createWebviewPanel(
-        'uiCanvas',
-        '🎨 UICanvas',
+        'uiCanvas', '🎨 UICanvas',
         { viewColumn: vscode.ViewColumn.Two, preserveFocus },
-        {
-            enableScripts: true,
-            retainContextWhenHidden: true,
-        }
+        { enableScripts: true, retainContextWhenHidden: true }
     );
 
     panel.onDidDispose(() => {
+        if (isDirty) {
+            // 面板已关闭，需在下次打开时自动保存
+            requestSaveFromFrontend();
+        }
         panel = null;
     });
 
@@ -203,17 +423,8 @@ function openPanel(context, preserveFocus = false) {
 // ═════════════════════════════════════════════════════════════
 
 function deactivate() {
-    if (serverProcess) {
-        serverProcess.kill();
-        serverProcess = null;
-    }
-    if (panel) {
-        panel.dispose();
-        panel = null;
-    }
+    if (serverProcess) { serverProcess.kill(); serverProcess = null; }
+    if (panel) { panel.dispose(); panel = null; }
 }
 
-module.exports = {
-    activate,
-    deactivate
-}
+module.exports = { activate, deactivate };

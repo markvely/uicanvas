@@ -7,6 +7,7 @@ agent-skills
 .DS_Store
 PUBLISHING.md
 SKILL.md
+test-timeout.js
 
 # 排除 node_modules 中的无用文件
 node_modules/@types
