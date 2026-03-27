@@ -160,7 +160,7 @@ async function activate(context) {
             for (const line of lines) {
                 console.log(`[UICanvas] ${line}`);
                 if (line.includes('__UICANVAS_OPEN_PANEL__')) {
-                    openPanel(context, false);
+                    openPanel(context, true);
                 }
                 // 处理来自前端的保存请求
                 if (line.startsWith('__UICANVAS_SAVE__')) {
@@ -394,7 +394,7 @@ function getWebviewHTML(port) {
 function openPanel(context, preserveFocus = false) {
     if (panel) {
         try {
-            panel.webview.html = getWebviewHTML(activePort);
+            // 面板已存在时，仅 reveal，不重新加载 HTML（避免画布状态丢失）
             panel.reveal(vscode.ViewColumn.Two, preserveFocus);
             return;
         } catch { panel = null; }

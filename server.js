@@ -167,8 +167,11 @@ if (isStdio) {
             }
           }
         } else if (msg.type && msg.requestId) {
-          // 收到带 ID 的具体请求命令，触发 IDE 自动打开/前置画板
-          console.log('__UICANVAS_OPEN_PANEL__');
+          // 仅在 __open_canvas__ 命令时触发 IDE 打开面板
+          // 其他命令不应打开/刷新面板，否则会导致画布重载和焦点抢夺
+          if (msg.type === '__open_canvas__') {
+            console.log('__UICANVAS_OPEN_PANEL__');
+          }
 
           const dispatch = (attempts = 0) => {
             let sent = false;
