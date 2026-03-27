@@ -167,8 +167,32 @@ if (isStdio) {
             }
           }
         } else if (msg.type && msg.requestId) {
-          // 仅在 __open_canvas__ 命令时触发 IDE 打开面板
-          // 其他命令不应打开/刷新面板，否则会导致画布重载和焦点抢夺
+          // ── 服务端直接处理的命令（不需要 Webview 转发）──────────
+          // __trigger_open_panel__: 触发 IDE 打开面板，立即响应
+          if (msg.type === '__trigger_open_panel__') {
+            console.log('__UICANVAS_OPEN_PANEL__');
+            ws.send(JSON.stringify({
+              requestId: msg.requestId,
+              result: { triggered: true },
+            }));
+            return;
+          }
+
+          // __check_webview_status__: 检查是否有活跃的 Webview 客户端，立即响应
+          if (msg.type === '__check_webview_status__') {
+            let webviewCount = 0;
+            for (const client of bridge.clients) {
+              if (client.readyState === 1 && !client.isRemoteStdio) webviewCount++;
+            }
+            ws.send(JSON.stringify({
+              requestId: msg.requestId,
+              result: { ready: webviewCount > 0, webviewCount },
+            }));
+            return;
+          }
+
+          // ── 需要转发到 Webview 的命令 ──────────────────────────
+          // 仅在 __open_canvas__ 命令时触发 IDE 打开面板（保留兼容）
           if (msg.type === '__open_canvas__') {
             console.log('__UICANVAS_OPEN_PANEL__');
           }

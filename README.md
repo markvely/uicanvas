@@ -75,6 +75,15 @@ If you are an AI Coding Agent reading this documentation to understand how to us
 2. **Use MCP Tools Only**: You must interact with the canvas EXCLUSIVELY through the provided MCP tools (`init_project`, `create_artboard`, `write_html`, etc.).
 3. **If Tools Are Missing**: If you do not see these tools in your available environment, **STOP IMMEDIATELY**. Do not attempt to reverse-engineer the WebSocket protocol. Tell the user: *"I cannot find the UICanvas MCP tools. Please Reload your VSCode Window or start a new Agent chat session so the tools can mount."*
 
+**Pre-flight Context Check & Professional Designer Mindset**:
+Before you output any design code, you MUST:
+- **Scan the environment**: Briefly read `package.json`, `README.md`, or the main app files to determine the project type, human language (e.g., English, Chinese), tech stack, and expected visual style. 
+- **Embody the Designer**: 
+  - *Graphic Designer*: Who is the audience? Establish proper visual hierarchy and emotional resonance.
+  - *Interaction Designer*: What is the user goal? Minimize clicks and handle all feedback loops (loading, errors).
+  - *UI Designer*: Is the interface self-explanatory? Build a consistent, reusable design system rather than isolated painted pages.
+- **Strict Spec Adherence**: You must strictly use the design tokens (colors, typography, spacing) defined in the initial Design Spec. **🚨 CRITICAL**: If you encounter a design iteration bottleneck or need new styles, you **MUST** stop designing the current page, return to update the Design Spec artboard first, and only then resume designing the page.
+
 ## 🏗️ How It Works
 
 ```
