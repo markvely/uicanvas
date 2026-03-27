@@ -19,11 +19,13 @@ const UICANVAS_DIR = 'UICanvas';
 // Utilities
 // ═════════════════════════════════════════════════════════════
 
-function cleanupStaleProcesses(currentExtPath) {
+function cleanupStaleProcesses(currentPid) {
     try {
-        const extPath = currentExtPath || '';
-        if (!extPath) return;
-        const cmd = `ps aux | grep "[n]ode.*uicanvas-" | grep -Fv "${extPath}" | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
+        // 杀掉所有旧的 uicanvas server.js 进程（HTTP Server + stdio），
+        // 排除当前进程自身和当前 extension host 进程
+        const myPid = currentPid || process.pid;
+        // 匹配所有 node ... server.js 的 uicanvas 进程
+        const cmd = `ps aux | grep '[n]ode.*uicanvas.*server\\.js' | grep -v grep | grep -v '${myPid}' | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
         execSync(cmd, { stdio: 'ignore' });
     } catch { /* ignore */ }
 }
@@ -140,7 +142,7 @@ UICanvasEditorProvider.viewType = 'uicanvas.editor';
 
 async function activate(context) {
     console.log('UICanvas extension activated.');
-    cleanupStaleProcesses(context.extensionPath);
+    cleanupStaleProcesses(process.pid);
 
     // ── 1. 启动 HTTP 服务器 ──────────────────────────
     if (!serverProcess) {
@@ -423,8 +425,14 @@ function openPanel(context, preserveFocus = false) {
 // ═════════════════════════════════════════════════════════════
 
 function deactivate() {
-    if (serverProcess) { serverProcess.kill(); serverProcess = null; }
+    // 强制杀死 HTTP Server 进程（SIGKILL，确保不残留）
+    if (serverProcess) {
+        try { serverProcess.kill('SIGKILL'); } catch { /* ignore */ }
+        serverProcess = null;
+    }
     if (panel) { panel.dispose(); panel = null; }
+    // 清理端口文件，避免下次启动时读到脏数据
+    try { fs.unlinkSync(PORT_FILE); } catch { /* ignore */ }
 }
 
 module.exports = { activate, deactivate };

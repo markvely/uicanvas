@@ -256,26 +256,75 @@ if (isStdio) {
 
 // ── stdio 远程桥接 ─────────────────────────────────────────
 
+let _connectFailCount = 0;
+
+// 使用 execSync 从进程列表发现当前活跃的 HTTP Server 端口
+import { execSync as execSyncImport } from 'node:child_process';
+function discoverPort() {
+  try {
+    const output = execSyncImport(
+      "ps aux | grep '[n]ode.*uicanvas.*server\\.js.*--port' | grep -v -- '--stdio'",
+      { encoding: 'utf8', timeout: 3000 }
+    ).trim();
+    // 可能有多行（多个僵尸）→ 取最后一个（最新的）
+    const lines = output.split('\n');
+    const lastLine = lines[lines.length - 1];
+    const match = lastLine.match(/--port\s+(\d+)/);
+    if (match) {
+      const port = parseInt(match[1], 10);
+      _log(`Port discovery: found port ${port} from process list`);
+      return port;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 function connectAsRemoteClient() {
   // 每次连接/重连时重新读取端口文件，感知 Reload Window 导致的端口变化
-  const currentPort = readPortFile() || PORT;
+  let currentPort = readPortFile() || getPortArg();
+
+  // 端口文件不可用时，尝试从进程列表发现端口
+  if (!currentPort) {
+    _log('Port file missing, attempting process-based discovery...');
+    currentPort = discoverPort();
+  }
+
+  // 连续失败 3 次后，强制重新发现端口（可能连到了僵尸服务器）
+  if (_connectFailCount >= 3) {
+    _log(`Connection failed ${_connectFailCount} times, forcing port re-discovery...`);
+    const discovered = discoverPort();
+    if (discovered && discovered !== currentPort) {
+      _log(`Switching from port ${currentPort} to discovered port ${discovered}`);
+      currentPort = discovered;
+    }
+    _connectFailCount = 0; // 重置计数
+  }
+
+  if (!currentPort) {
+    currentPort = PORT || 3200;
+    _log(`No port found, falling back to ${currentPort}`);
+  }
+
   const url = `ws://localhost:${currentPort}/?role=stdio`;
-  _log(`Connecting to ${url} (portFile=${readPortFile()})`);
+  _log(`Connecting to ${url} (portFile=${readPortFile()}, failCount=${_connectFailCount})`);
   const ws = new WebSocket(url);
 
   ws.on('open', () => {
     _log('Remote WS CONNECTED');
+    _connectFailCount = 0; // 连接成功，重置失败计数
     bridge.setRemote(ws);
   });
 
   ws.on('error', (err) => {
     _log(`Remote WS ERROR: ${err?.message}`);
+    _connectFailCount++;
     // 连接失败 — HTTP 服务器可能还没启动，稍后重试
     setTimeout(() => connectAsRemoteClient(), 1000);
   });
 
   ws.on('close', () => {
     bridge.remoteWs = null;
+    _connectFailCount++;
     // 尝试重连
     setTimeout(() => connectAsRemoteClient(), 2000);
   });
