@@ -66,13 +66,14 @@ process.on('SIGTERM', () => { _log('SIGTERM received'); });
 process.on('SIGINT', () => { _log('SIGINT received'); });
 
 // ── Shared state ───────────────────────────────────────────
+let _connectFailCount = 0;
 const bridge = new WSBridge();
 const artboards = new ArtboardManager();
 const project = new ProjectManager();
 
 // ── MCP Server (高层 API) ──────────────────────────────────
 const mcpServer = new McpServer(
-  { name: 'uicanvas', version: '1.1.10' },
+  { name: 'uicanvas', version: '1.2.5' },
   { capabilities: { tools: {} } }
 );
 registerTools(mcpServer, bridge, artboards, project);
@@ -256,7 +257,8 @@ if (isStdio) {
 
 // ── stdio 远程桥接 ─────────────────────────────────────────
 
-let _connectFailCount = 0;
+const MAX_RECONNECT_ATTEMPTS = 60; // 超过此次数后停止重连 (~2 分钟)
+let _totalReconnectAttempts = 0;
 
 // 使用 execSync 从进程列表发现当前活跃的 HTTP Server 端口
 import { execSync as execSyncImport } from 'node:child_process';
@@ -318,6 +320,13 @@ function connectAsRemoteClient() {
   ws.on('error', (err) => {
     _log(`Remote WS ERROR: ${err?.message}`);
     _connectFailCount++;
+    _totalReconnectAttempts++;
+    if (_totalReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      _log(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+      // 不退出进程 — MCP transport 仍然active，只是没有 HTTP 桥接
+      // 下一次 MCP 工具调用会返回 "No active canvas client" 错误
+      return;
+    }
     // 连接失败 — HTTP 服务器可能还没启动，稍后重试
     setTimeout(() => connectAsRemoteClient(), 1000);
   });
@@ -325,6 +334,11 @@ function connectAsRemoteClient() {
   ws.on('close', () => {
     bridge.remoteWs = null;
     _connectFailCount++;
+    _totalReconnectAttempts++;
+    if (_totalReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      _log(`Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+      return;
+    }
     // 尝试重连
     setTimeout(() => connectAsRemoteClient(), 2000);
   });

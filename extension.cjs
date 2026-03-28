@@ -19,13 +19,11 @@ const UICANVAS_DIR = 'UICanvas';
 // Utilities
 // ═════════════════════════════════════════════════════════════
 
-function cleanupStaleProcesses(currentPid) {
+function cleanupStaleProcesses() {
     try {
-        // 杀掉所有旧的 uicanvas server.js 进程（HTTP Server + stdio），
-        // 排除当前进程自身和当前 extension host 进程
-        const myPid = currentPid || process.pid;
-        // 匹配所有 node ... server.js 的 uicanvas 进程
-        const cmd = `ps aux | grep '[n]ode.*uicanvas.*server\\.js' | grep -v grep | grep -v '${myPid}' | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
+        // 仅杀掉旧的 HTTP Server 进程（带 --port 参数），
+        // 不杀 stdio 进程（由 MCP 客户端管理，杀掉会导致 EOF 错误）
+        const cmd = `ps aux | grep '[n]ode.*uicanvas.*server\\.js.*--port' | grep -v -- '--stdio' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
         execSync(cmd, { stdio: 'ignore' });
     } catch { /* ignore */ }
 }
@@ -142,7 +140,7 @@ UICanvasEditorProvider.viewType = 'uicanvas.editor';
 
 async function activate(context) {
     console.log('UICanvas extension activated.');
-    cleanupStaleProcesses(process.pid);
+    cleanupStaleProcesses();
 
     // ── 1. 启动 HTTP 服务器 ──────────────────────────
     if (!serverProcess) {
@@ -431,8 +429,13 @@ function deactivate() {
         serverProcess = null;
     }
     if (panel) { panel.dispose(); panel = null; }
-    // 清理端口文件，避免下次启动时读到脏数据
-    try { fs.unlinkSync(PORT_FILE); } catch { /* ignore */ }
+    // 仅在端口文件内容是自己的端口时才删除，避免误删其他窗口的端口文件
+    try {
+        const filePort = fs.readFileSync(PORT_FILE, 'utf8').trim();
+        if (String(activePort) === filePort) {
+            fs.unlinkSync(PORT_FILE);
+        }
+    } catch { /* ignore */ }
 }
 
 module.exports = { activate, deactivate };
