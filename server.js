@@ -73,7 +73,7 @@ const project = new ProjectManager();
 
 // ── MCP Server (高层 API) ──────────────────────────────────
 const mcpServer = new McpServer(
-  { name: 'uicanvas', version: '1.2.5' },
+  { name: 'uicanvas', version: '1.2.6' },
   { capabilities: { tools: {} } }
 );
 registerTools(mcpServer, bridge, artboards, project);
