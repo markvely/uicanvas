@@ -73,7 +73,7 @@ Now your AI agent can design UI directly on the canvas! 🎉
 If you are an AI Coding Agent reading this documentation to understand how to use UICanvas, **you MUST explicitly obey the following boundaries**:
 1. **Never write custom WebSocket scripts**: You are strictly forbidden from writing Node.js, Python, or shell scripts to connect to `localhost:3200`.
 2. **Use MCP Tools Only**: You must interact with the canvas EXCLUSIVELY through the provided MCP tools (`init_project`, `create_artboard`, `write_html`, etc.).
-3. **If Tools Are Missing**: If you do not see these tools in your available environment, **STOP IMMEDIATELY**. Do not attempt to reverse-engineer the WebSocket protocol. Tell the user: *"I cannot find the UICanvas MCP tools. Please Reload your VSCode Window or start a new Agent chat session so the tools can mount."*
+3. **If Tools Are Missing (Prefix Issue)**: Depending on your host IDE or agent environment, the MCP tools might expose automatically with a prefix appended (such as `mcp_uicanvas_open_canvas`). **DO NOT** look for an exact name match like `open_canvas`. Instead, perform a substring match (`open_canvas`) on your available tools. If they are truly missing despite substrings, **STOP IMMEDIATELY**. Tell the user: *"I cannot find the UICanvas MCP tools. Please Reload your VSCode Window or start a new Agent chat session so the tools can mount."*
 4. **NO Local HTML Files**: When asked to design or write UI, you **MUST** use `create_artboard` and `write_html`. You are strictly forbidden from writing `.html` files to the user's local disk or just spitting out code blocks in the chat. Render it in the canvas!
 
 **Pre-flight Context Check & Professional Designer Mindset**:

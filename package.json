@@ -1,7 +1,7 @@
 {
   "name": "uicanvas",
   "displayName": "UICanvas",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "publisher": "markvely",
   "repository": {
     "type": "git",
@@ -21,7 +21,7 @@
     "canvas"
   ],
   "type": "module",
-  "main": "extension.cjs",
+  "main": "./extension.cjs",
   "engines": {
     "vscode": "^1.80.0"
   },

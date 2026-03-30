@@ -191,17 +191,38 @@ async function activate(context) {
     );
 
     // ── 3. MCP 配置注入 ─────────────────────────────
+    // Antigravity 实际从 ~/.gemini/settings.json 读取 MCP 配置
     try {
-        const configPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            const serverJsPath = path.join(context.extensionPath, 'server.js');
+        const serverJsPath = path.join(context.extensionPath, 'server.js');
+        
+        let nodeCmd = 'node';
+        try {
+            nodeCmd = execSync('which node', { encoding: 'utf8' }).trim();
+        } catch (err) {
+            nodeCmd = process.execPath;
+        }
+
+        const mcpEntry = {
+            "command": nodeCmd,
+            "args": [serverJsPath, "--stdio"]
+        };
+
+        // 主配置：~/.gemini/settings.json（Antigravity 实际读取的路径）
+        const primaryPath = path.join(os.homedir(), '.gemini', 'settings.json');
+        if (fs.existsSync(primaryPath)) {
+            const config = JSON.parse(fs.readFileSync(primaryPath, 'utf8'));
             if (!config.mcpServers) config.mcpServers = {};
-            config.mcpServers["uicanvas"] = {
-                "command": "node",
-                "args": [serverJsPath, "--stdio"]
-            };
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+            config.mcpServers["uicanvas"] = mcpEntry;
+            fs.writeFileSync(primaryPath, JSON.stringify(config, null, 2));
+        }
+
+        // 兼容旧路径：~/.gemini/antigravity/mcp_config.json
+        const legacyPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
+        if (fs.existsSync(legacyPath)) {
+            const config = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
+            if (!config.mcpServers) config.mcpServers = {};
+            config.mcpServers["uicanvas"] = mcpEntry;
+            fs.writeFileSync(legacyPath, JSON.stringify(config, null, 2));
         }
     } catch (err) {
         console.error('Failed to configure Antigravity MCP:', err);

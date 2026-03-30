@@ -38,7 +38,7 @@ setTimeout(() => {
         stdout = lines.pop(); // keep remainder
         for (const line of lines) {
           if (!line) continue;
-          console.log('[MCP OUT]', line.substring(0, 200));
+          console.log('[MCP OUT]', line.substring(0, 500));
         }
       }
     });
@@ -53,19 +53,29 @@ setTimeout(() => {
       stdioSrv.stdin.write(JSON.stringify(init) + '\n');
 
       setTimeout(() => {
-        // Call get_basic_info
-        const call = {
-          jsonrpc:'2.0', id:2, method:'tools/call',
-          params: { name: 'get_basic_info', arguments: {} }
-        };
-        console.log('--- CALLING get_basic_info ---');
-        stdioSrv.stdin.write(JSON.stringify(call) + '\n');
+        // Send initialized notification
+        const initialized = { jsonrpc:'2.0', method:'notifications/initialized' };
+        stdioSrv.stdin.write(JSON.stringify(initialized) + '\n');
+        
+        // Output an extra message just in case
+        const toolsList = { jsonrpc:'2.0', id:10, method:'tools/list' };
+        stdioSrv.stdin.write(JSON.stringify(toolsList) + '\n');
 
         setTimeout(() => {
-          httpSrv.kill();
-          stdioSrv.kill();
-          process.exit(0);
-        }, 3000);
+          // Call get_basic_info
+          const call = {
+            jsonrpc:'2.0', id:2, method:'tools/call',
+            params: { name: 'get_basic_info', arguments: {} }
+          };
+          console.log('--- CALLING get_basic_info ---');
+          stdioSrv.stdin.write(JSON.stringify(call) + '\n');
+
+          setTimeout(() => {
+            httpSrv.kill();
+            stdioSrv.kill();
+            process.exit(0);
+          }, 3000);
+        }, 500);
       }, 500);
     }, 500);
   }, 1000);
