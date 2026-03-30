@@ -73,7 +73,7 @@ const project = new ProjectManager();
 
 // ── MCP Server (高层 API) ──────────────────────────────────
 const mcpServer = new McpServer(
-  { name: 'uicanvas', version: '1.2.6' },
+  { name: 'uicanvas', version: '1.3.0' },
   { capabilities: { tools: {} } }
 );
 registerTools(mcpServer, bridge, artboards, project);
@@ -84,6 +84,15 @@ app.use(express.static(join(__dirname, 'public')));
 app.use('/components', express.static(join(__dirname, 'components')));
 // Landing page available at /welcome
 app.get('/welcome', (_req, res) => res.sendFile(join(__dirname, 'public', 'welcome.html')));
+
+// Health check endpoint for Webview loading
+app.get('/__status__', (_req, res) => {
+  let wsClients = 0;
+  for (const client of bridge.clients) {
+    if (client.readyState === 1 && !client.isRemoteStdio) wsClients++;
+  }
+  res.json({ ready: true, wsClients });
+});
 
 // ── Save/Load endpoints (extension <-> frontend via HTTP server) ──
 app.use(express.json({ limit: '50mb' }));
@@ -114,6 +123,13 @@ function handleSaveData(data) {
   if (!isStdio) {
     // HTTP server 模式：输出到 stdout 让 extension 捕获
     console.log('__UICANVAS_SAVE__' + JSON.stringify(data));
+  }
+}
+
+// ── 文件绑定信号：通知 extension 将当前画布关联到指定文件 ──
+function handleBindFile(fileName) {
+  if (!isStdio) {
+    console.log('__UICANVAS_BIND_FILE__' + JSON.stringify({ fileName }));
   }
 }
 
@@ -151,6 +167,11 @@ if (isStdio) {
         // 处理前端保存数据
         if (msg.type === '__save_data__') {
           handleSaveData(msg.data);
+          return;
+        }
+        // 处理文件绑定请求
+        if (msg.type === '__bind_file__') {
+          handleBindFile(msg.fileName);
           return;
         }
         // 处理 dirty 状态通知
@@ -313,7 +334,8 @@ function connectAsRemoteClient() {
 
   ws.on('open', () => {
     _log('Remote WS CONNECTED');
-    _connectFailCount = 0; // 连接成功，重置失败计数
+    _connectFailCount = 0;
+    _totalReconnectAttempts = 0; // 重置总计数，防止累计到上限后永久放弃
     bridge.setRemote(ws);
   });
 

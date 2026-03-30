@@ -8,6 +8,8 @@ agent-skills
 PUBLISHING.md
 SKILL.md
 test-timeout.js
+test-timeout.cjs
+test-mcp.mjs
 
 # 排除 node_modules 中的无用文件
 node_modules/@types

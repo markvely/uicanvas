@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const net = require('net');
+const http = require('http');
 
 let serverProcess = null;
 let panel = null;
@@ -23,7 +24,7 @@ function cleanupStaleProcesses() {
     try {
         // 仅杀掉旧的 HTTP Server 进程（带 --port 参数），
         // 不杀 stdio 进程（由 MCP 客户端管理，杀掉会导致 EOF 错误）
-        const cmd = `ps aux | grep '[n]ode.*uicanvas.*server\\.js.*--port' | grep -v -- '--stdio' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
+        const cmd = `ps aux | grep '[n]ode.*uicanvas.*server\\\\.js.*--port' | grep -v -- '--stdio' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true`;
         execSync(cmd, { stdio: 'ignore' });
     } catch { /* ignore */ }
 }
@@ -40,6 +41,33 @@ function findFreePort() {
 
 function writePortFile(port) {
     try { fs.writeFileSync(PORT_FILE, String(port)); } catch {}
+}
+
+/** 轮询等待 HTTP 服务器就绪 */
+function waitForServerReady(maxMs = 15000) {
+    return new Promise((resolve) => {
+        const start = Date.now();
+        const poll = () => {
+            if (Date.now() - start > maxMs) { resolve(false); return; }
+            const req = http.request({
+                hostname: 'localhost', port: activePort,
+                path: '/__status__', method: 'GET', timeout: 2000,
+            }, (res) => {
+                let body = '';
+                res.on('data', (d) => { body += d; });
+                res.on('end', () => {
+                    try {
+                        const data = JSON.parse(body);
+                        if (data.ready && data.wsClients > 0) { resolve(true); return; }
+                    } catch { /* ignore */ }
+                    setTimeout(poll, 300);
+                });
+            });
+            req.on('error', () => setTimeout(poll, 300));
+            req.end();
+        };
+        poll();
+    });
 }
 
 /** 确保 UICanvas 目录存在于工作区 */
@@ -123,11 +151,15 @@ class UICanvasEditorProvider {
     async resolveCustomTextEditor(document, webviewPanel) {
         webviewPanel.webview.options = { enableScripts: true };
         webviewPanel.webview.html = getWebviewHTML(activePort);
-
-        // 等面板加载后，发送文件内容
-        setTimeout(() => {
+        // 等待 HTTP 服务器和 WS 客户端都就绪后再发送文件内容
+        const ready = await waitForServerReady();
+        if (ready) {
             loadFileIntoPanel(document.uri.fsPath);
-        }, 2000);
+        } else {
+            console.warn('[UICanvas] Server not ready, file may not load correctly');
+            // 降级：延迟后尝试
+            setTimeout(() => loadFileIntoPanel(document.uri.fsPath), 3000);
+        }
     }
 }
 
@@ -141,6 +173,48 @@ UICanvasEditorProvider.viewType = 'uicanvas.editor';
 async function activate(context) {
     console.log('UICanvas extension activated.');
     cleanupStaleProcesses();
+
+    // ── 0. MCP 配置注入（最先执行，纯同步，不依赖端口）─────────
+    // Antigravity daemon 可能在插件激活前就已经读取配置，因此必须在任何 async 操作之前完成
+    try {
+        const serverJsPath = path.join(context.extensionPath, 'server.js');
+        let nodeCmd = 'node';
+        try {
+            nodeCmd = execSync('which node', { encoding: 'utf8' }).trim();
+        } catch (err) {
+            nodeCmd = process.execPath;
+        }
+        const mcpEntry = {
+            "command": nodeCmd,
+            "args": [serverJsPath, "--stdio"]
+        };
+
+        // 主配置：~/.gemini/settings.json
+        const geminiDir = path.join(os.homedir(), '.gemini');
+        if (!fs.existsSync(geminiDir)) {
+            fs.mkdirSync(geminiDir, { recursive: true });
+        }
+        const primaryPath = path.join(geminiDir, 'settings.json');
+        let primaryConfig = { mcpServers: {} };
+        if (fs.existsSync(primaryPath)) {
+            try { primaryConfig = JSON.parse(fs.readFileSync(primaryPath, 'utf8')); } catch { /* ignore parse errors */ }
+        }
+        if (!primaryConfig.mcpServers) primaryConfig.mcpServers = {};
+        primaryConfig.mcpServers["uicanvas"] = mcpEntry;
+        fs.writeFileSync(primaryPath, JSON.stringify(primaryConfig, null, 2));
+
+        // 兼容旧路径：~/.gemini/antigravity/mcp_config.json
+        const legacyPath = path.join(geminiDir, 'antigravity', 'mcp_config.json');
+        if (fs.existsSync(legacyPath)) {
+            let legacyConfig = { mcpServers: {} };
+            try { legacyConfig = JSON.parse(fs.readFileSync(legacyPath, 'utf8')); } catch { /* ignore */ }
+            if (!legacyConfig.mcpServers) legacyConfig.mcpServers = {};
+            legacyConfig.mcpServers["uicanvas"] = mcpEntry;
+            fs.writeFileSync(legacyPath, JSON.stringify(legacyConfig, null, 2));
+        }
+    } catch (err) {
+        console.error('Failed to configure Antigravity MCP:', err);
+    }
 
     // ── 1. 启动 HTTP 服务器 ──────────────────────────
     if (!serverProcess) {
@@ -162,12 +236,14 @@ async function activate(context) {
                 if (line.includes('__UICANVAS_OPEN_PANEL__')) {
                     openPanel(context, true);
                 }
-                // 处理来自前端的保存请求
                 if (line.startsWith('__UICANVAS_SAVE__')) {
                     const jsonStr = line.replace('__UICANVAS_SAVE__', '');
                     handleSaveFromFrontend(jsonStr);
                 }
-                // 处理 dirty 状态变化
+                if (line.startsWith('__UICANVAS_BIND_FILE__')) {
+                    const jsonStr = line.replace('__UICANVAS_BIND_FILE__', '');
+                    handleBindFileSignal(jsonStr);
+                }
                 if (line === '__UICANVAS_DIRTY__') {
                     setDirty(true);
                 }
@@ -190,45 +266,7 @@ async function activate(context) {
         })
     );
 
-    // ── 3. MCP 配置注入 ─────────────────────────────
-    // Antigravity 实际从 ~/.gemini/settings.json 读取 MCP 配置
-    try {
-        const serverJsPath = path.join(context.extensionPath, 'server.js');
-        
-        let nodeCmd = 'node';
-        try {
-            nodeCmd = execSync('which node', { encoding: 'utf8' }).trim();
-        } catch (err) {
-            nodeCmd = process.execPath;
-        }
-
-        const mcpEntry = {
-            "command": nodeCmd,
-            "args": [serverJsPath, "--stdio"]
-        };
-
-        // 主配置：~/.gemini/settings.json（Antigravity 实际读取的路径）
-        const primaryPath = path.join(os.homedir(), '.gemini', 'settings.json');
-        if (fs.existsSync(primaryPath)) {
-            const config = JSON.parse(fs.readFileSync(primaryPath, 'utf8'));
-            if (!config.mcpServers) config.mcpServers = {};
-            config.mcpServers["uicanvas"] = mcpEntry;
-            fs.writeFileSync(primaryPath, JSON.stringify(config, null, 2));
-        }
-
-        // 兼容旧路径：~/.gemini/antigravity/mcp_config.json
-        const legacyPath = path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json');
-        if (fs.existsSync(legacyPath)) {
-            const config = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
-            if (!config.mcpServers) config.mcpServers = {};
-            config.mcpServers["uicanvas"] = mcpEntry;
-            fs.writeFileSync(legacyPath, JSON.stringify(config, null, 2));
-        }
-    } catch (err) {
-        console.error('Failed to configure Antigravity MCP:', err);
-    }
-
-    // ── 4. Sidebar Tree View ────────────────────────
+    // ── 3. Sidebar Tree View ────────────────────────
     const treeProvider = new UICanvasTreeProvider();
     vscode.window.registerTreeDataProvider('uicanvas.files', treeProvider);
 
@@ -247,7 +285,7 @@ async function activate(context) {
         }
     }
 
-    // ── 5. Custom Editor Provider ───────────────────
+    // ── 4. Custom Editor Provider ───────────────────
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(
             UICanvasEditorProvider.viewType,
@@ -256,7 +294,7 @@ async function activate(context) {
         )
     );
 
-    // ── 6. Commands ─────────────────────────────────
+    // ── 5. Commands ─────────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand('uicanvas.start', () => openPanel(context)),
         vscode.commands.registerCommand('uicanvas.newFile', async () => {
@@ -282,15 +320,20 @@ async function activate(context) {
             };
             fs.writeFileSync(filePath, JSON.stringify(emptyDoc, null, 2));
             treeProvider.refresh();
-            // 打开该文件
             vscode.commands.executeCommand('uicanvas.openFile', filePath);
         }),
         vscode.commands.registerCommand('uicanvas.refresh', () => treeProvider.refresh()),
-        vscode.commands.registerCommand('uicanvas.openFile', (filePath) => {
+        vscode.commands.registerCommand('uicanvas.openFile', async (filePath) => {
             currentFilePath = filePath;
             openPanel(context, false);
-            // 延迟加载文件内容到面板
-            setTimeout(() => loadFileIntoPanel(filePath), 1500);
+            // 轮询等待服务就绪后加载文件内容
+            const ready = await waitForServerReady();
+            if (ready) {
+                loadFileIntoPanel(filePath);
+            } else {
+                // 降级：延迟后尝试
+                setTimeout(() => loadFileIntoPanel(filePath), 3000);
+            }
         }),
         vscode.commands.registerCommand('uicanvas.save', () => {
             requestSaveFromFrontend();
@@ -300,16 +343,12 @@ async function activate(context) {
 
 
 // ═════════════════════════════════════════════════════════════
-// Save / Load
+// Save / Load / Bind
 // ═════════════════════════════════════════════════════════════
 
 /** 请求前端序列化当前画布状态 */
 function requestSaveFromFrontend() {
     if (!serverProcess) return;
-    // 通过 HTTP server 的 stdin 发送保存请求
-    // 实际上我们通过 stdout 信号（前端→HTTP server stdout→extension）
-    // 这里用不同的方式：直接向 HTTP server 发 HTTP 请求
-    const http = require('http');
     const req = http.request({
         hostname: 'localhost',
         port: activePort,
@@ -324,7 +363,7 @@ function handleSaveFromFrontend(jsonStr) {
     try {
         const data = JSON.parse(jsonStr);
         if (!currentFilePath) {
-            // 没有文件路径，询问保存位置
+            // 没有文件路径，自动生成
             const dir = ensureUICanvasDir();
             if (!dir) return;
             const name = data.projectName || 'Untitled';
@@ -340,14 +379,39 @@ function handleSaveFromFrontend(jsonStr) {
     }
 }
 
+/** 处理 MCP init_project 发出的文件绑定信号 */
+function handleBindFileSignal(jsonStr) {
+    try {
+        const { fileName } = JSON.parse(jsonStr);
+        if (!fileName) return;
+        const dir = ensureUICanvasDir();
+        if (!dir) return;
+        const filePath = path.join(dir, `${fileName}.uicanvas`);
+        // 如果文件不存在，创建空文件
+        if (!fs.existsSync(filePath)) {
+            const emptyDoc = {
+                version: 1,
+                projectName: fileName,
+                designTokens: {},
+                artboards: [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+            fs.writeFileSync(filePath, JSON.stringify(emptyDoc, null, 2));
+        }
+        currentFilePath = filePath;
+        console.log(`[UICanvas] Bound to file: ${currentFilePath}`);
+    } catch (err) {
+        console.error('[UICanvas] Bind file failed:', err);
+    }
+}
+
 /** 加载文件内容到面板的画布中 */
 function loadFileIntoPanel(filePath) {
     if (!filePath || !fs.existsSync(filePath)) return;
     try {
         const content = fs.readFileSync(filePath, 'utf8');
         const data = JSON.parse(content);
-        // 通过 HTTP 请求发送加载命令
-        const http = require('http');
         const postData = JSON.stringify(data);
         const req = http.request({
             hostname: 'localhost',
@@ -391,7 +455,7 @@ function getWebviewHTML(port) {
         <title>UICanvas</title>
         <style>
             body, html { margin: 0; padding: 0; height: 100%; border: none; overflow: hidden; background: #1e1e1e; }
-            iframe { width: 100%; height: 100%; border: none; }
+            iframe { width: 100%; height: 100%; border: none; display: none; }
             .loading { position: fixed; inset: 0; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; font-size: 14px; background: #1e1e1e; gap: 12px; }
             .spinner { width: 24px; height: 24px; border: 2px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; }
             @keyframes spin { to { transform: rotate(360deg); } }
@@ -400,13 +464,41 @@ function getWebviewHTML(port) {
     <body>
         <div id="loader" class="loading">
             <div class="spinner"></div>
-            <span>Connecting to UICanvas...</span>
+            <span id="loader-text">Connecting to UICanvas...</span>
         </div>
-        <iframe id="canvas-frame" src="about:blank" onload="document.getElementById('loader').style.display='none'"></iframe>
+        <iframe id="canvas-frame" src="about:blank"></iframe>
         <script>
-            let iframe = document.getElementById('canvas-frame');
-            function tryLoad() { iframe.src = 'http://localhost:${port}'; }
-            setTimeout(tryLoad, 500);
+            const iframe = document.getElementById('canvas-frame');
+            const loader = document.getElementById('loader');
+            const loaderText = document.getElementById('loader-text');
+            let attempts = 0;
+            const maxAttempts = 60; // 30 seconds max
+
+            function tryLoad() {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    loaderText.textContent = 'Failed to connect. Please Reload Window.';
+                    return;
+                }
+                fetch('http://localhost:${port}/__status__')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.ready) {
+                            iframe.src = 'http://localhost:${port}';
+                            iframe.onload = () => {
+                                loader.style.display = 'none';
+                                iframe.style.display = 'block';
+                            };
+                        } else {
+                            setTimeout(tryLoad, 500);
+                        }
+                    })
+                    .catch(() => {
+                        loaderText.textContent = 'Waiting for server... (' + attempts + ')';
+                        setTimeout(tryLoad, 500);
+                    });
+            }
+            setTimeout(tryLoad, 300);
         </script>
     </body>
     </html>`;
@@ -429,7 +521,6 @@ function openPanel(context, preserveFocus = false) {
 
     panel.onDidDispose(() => {
         if (isDirty) {
-            // 面板已关闭，需在下次打开时自动保存
             requestSaveFromFrontend();
         }
         panel = null;
@@ -444,13 +535,11 @@ function openPanel(context, preserveFocus = false) {
 // ═════════════════════════════════════════════════════════════
 
 function deactivate() {
-    // 强制杀死 HTTP Server 进程（SIGKILL，确保不残留）
     if (serverProcess) {
         try { serverProcess.kill('SIGKILL'); } catch { /* ignore */ }
         serverProcess = null;
     }
     if (panel) { panel.dispose(); panel = null; }
-    // 仅在端口文件内容是自己的端口时才删除，避免误删其他窗口的端口文件
     try {
         const filePort = fs.readFileSync(PORT_FILE, 'utf8').trim();
         if (String(activePort) === filePort) {
