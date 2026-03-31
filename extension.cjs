@@ -188,32 +188,77 @@ async function activate(context) {
             "command": nodeCmd,
             "args": [serverJsPath, "--stdio"]
         };
+        const homedir = os.homedir();
+        const configPaths = [
+            // Antigravity (New & Legacy)
+            path.join(homedir, '.gemini', 'settings.json'),
+            path.join(homedir, '.gemini', 'antigravity', 'mcp_config.json'),
+            // Cursor
+            path.join(homedir, '.cursor', 'mcp.json'),
+            // Claude Desktop (Mac)
+            path.join(homedir, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
+            // Claude Desktop (Windows/Linux)
+            path.join(homedir, '.claude', 'claude_desktop_config.json'),
+            // Windsurf
+            path.join(homedir, '.codeium', 'windsurf', 'mcp_config.json')
+        ];
 
-        // 主配置：~/.gemini/settings.json
-        const geminiDir = path.join(os.homedir(), '.gemini');
-        if (!fs.existsSync(geminiDir)) {
-            fs.mkdirSync(geminiDir, { recursive: true });
-        }
-        const primaryPath = path.join(geminiDir, 'settings.json');
-        let primaryConfig = { mcpServers: {} };
-        if (fs.existsSync(primaryPath)) {
-            try { primaryConfig = JSON.parse(fs.readFileSync(primaryPath, 'utf8')); } catch { /* ignore parse errors */ }
-        }
-        if (!primaryConfig.mcpServers) primaryConfig.mcpServers = {};
-        primaryConfig.mcpServers["uicanvas"] = mcpEntry;
-        fs.writeFileSync(primaryPath, JSON.stringify(primaryConfig, null, 2));
+        // Ensure .gemini exists because we always want to write explicitly for Antigravity
+        const geminiDir = path.join(homedir, '.gemini');
+        if (!fs.existsSync(geminiDir)) fs.mkdirSync(geminiDir, { recursive: true });
 
-        // 兼容旧路径：~/.gemini/antigravity/mcp_config.json
-        const legacyPath = path.join(geminiDir, 'antigravity', 'mcp_config.json');
-        if (fs.existsSync(legacyPath)) {
-            let legacyConfig = { mcpServers: {} };
-            try { legacyConfig = JSON.parse(fs.readFileSync(legacyPath, 'utf8')); } catch { /* ignore */ }
-            if (!legacyConfig.mcpServers) legacyConfig.mcpServers = {};
-            legacyConfig.mcpServers["uicanvas"] = mcpEntry;
-            fs.writeFileSync(legacyPath, JSON.stringify(legacyConfig, null, 2));
+        const injectMcpConfig = (configPath) => {
+            try {
+                // For external apps, only inject if their config directory already exists
+                const dir = path.dirname(configPath);
+                if (!fs.existsSync(dir)) {
+                    // Always try to inject into .gemini paths, but skip external if missing
+                    if (!configPath.includes('.gemini')) return;
+                }
+                
+                let config = { mcpServers: {} };
+                if (fs.existsSync(configPath)) {
+                    try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch { /* ignore parse errors */ }
+                }
+                if (!config.mcpServers) config.mcpServers = {};
+                config.mcpServers["uicanvas"] = mcpEntry;
+                fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+            } catch (err) {
+                console.error(`[UICanvas] Failed to inject MCP config to ${configPath}`, err);
+            }
+        };
+
+        configPaths.forEach(injectMcpConfig);
+
+        // ── 0.5 SKILL.md Context Auto-Injection ──
+        try {
+            const wsFolder = vscode.workspace.workspaceFolders?.[0];
+            if (wsFolder) {
+                const rulesContent = `
+# UICanvas Usage Rules
+When visual UI design/mockup is requested:
+1. ALWAYS call \`open_canvas\` first to open the live preview panel.
+2. Call \`init_project\` to establish design specs (colors/fonts) before page creation.
+3. Call \`create_artboard\` to create the page.
+4. Call \`write_html\` to render HTML/CSS.
+NEVER create local .html files for UI design.
+`;
+                for (const ruleFile of ['.cursorrules', '.windsurfrules']) {
+                    const rulePath = path.join(wsFolder.uri.fsPath, ruleFile);
+                    if (fs.existsSync(rulePath)) {
+                        const content = fs.readFileSync(rulePath, 'utf8');
+                        if (!content.includes('UICanvas')) {
+                            fs.appendFileSync(rulePath, '\n\n' + rulesContent);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[UICanvas] Failed to auto-inject workspace rules', err);
         }
+
     } catch (err) {
-        console.error('Failed to configure Antigravity MCP:', err);
+        console.error('[UICanvas] Failed to configure MCP plugins:', err);
     }
 
     // ── 1. 启动 HTTP 服务器 ──────────────────────────
